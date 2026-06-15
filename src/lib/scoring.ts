@@ -47,6 +47,59 @@ export async function recalcParticipantPoints(
   return total
 }
 
+// Recalcula puntos de TODOS los partidos terminados en una sola pasada.
+// Mucho más eficiente que llamar recalcMatchPredictions por cada partido.
+export async function recalcAllPoints(supabase: AnySupabaseClient): Promise<void> {
+  // 1. Partidos terminados con marcador
+  const { data: matches, error: mErr } = await supabase
+    .from('matches')
+    .select('id, home_score, away_score')
+    .eq('status', 'finished')
+  if (mErr) throw mErr
+  if (!matches?.length) return
+
+  // 2. Todas las predicciones
+  const { data: preds, error: pErr } = await supabase
+    .from('predictions')
+    .select('id, participant_id, match_id, predicted_home, predicted_away')
+  if (pErr) throw pErr
+  if (!preds?.length) return
+
+  // 3. Calcular puntos en memoria
+  const matchMap = new Map(matches.map(m => [m.id, m]))
+  const pointsById = new Map<string, number>()   // prediction id → pts
+  const totalByParticipant = new Map<string, number>()
+
+  // Inicializar totales en 0 para todos los participantes
+  for (const p of preds) totalByParticipant.set(p.participant_id, 0)
+
+  for (const pred of preds) {
+    const match = matchMap.get(pred.match_id)
+    const pts = match && match.home_score !== null && match.away_score !== null
+      ? calcPoints(
+          { predicted_home: pred.predicted_home, predicted_away: pred.predicted_away },
+          { home_score: match.home_score, away_score: match.away_score }
+        )
+      : 0
+    pointsById.set(pred.id, pts)
+    totalByParticipant.set(pred.participant_id, (totalByParticipant.get(pred.participant_id) ?? 0) + pts)
+  }
+
+  // 4. Batch upsert de predicciones (grupos de 100)
+  const updates = preds
+    .filter(p => matchMap.has(p.match_id))   // solo las de partidos terminados
+    .map(p => ({ id: p.id, points_earned: pointsById.get(p.id) ?? 0 }))
+
+  for (let i = 0; i < updates.length; i += 100) {
+    await supabase.from('predictions').upsert(updates.slice(i, i + 100), { onConflict: 'id' })
+  }
+
+  // 5. Actualizar total_points de cada participante
+  for (const [pid, total] of totalByParticipant) {
+    await supabase.from('participants').update({ total_points: total }).eq('id', pid)
+  }
+}
+
 export async function recalcMatchPredictions(
   supabase: AnySupabaseClient,
   matchId: string,

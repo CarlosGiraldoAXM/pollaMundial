@@ -9,7 +9,7 @@ import { useQueryClient } from '@tanstack/react-query'
 export function Admin() {
   const { isAuthenticated, logout } = useAuth()
   const navigate = useNavigate()
-  const { triggerUpdate, isFetching, lastUpdated, lastError } = useMatchUpdater()
+  const { triggerUpdate, isFetching, triggerRecalc, isRecalculating, lastUpdated, lastError } = useMatchUpdater()
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -116,7 +116,33 @@ export function Admin() {
           </button>
         </section>
 
-        {/* 3. Carga manual */}
+        {/* 3. Recalcular puntos */}
+        <section className="card p-6">
+          <h2 className="text-lg font-semibold text-white mb-1">Recalcular Puntos</h2>
+          <p className="text-slate-400 text-sm mb-4">
+            Vuelve a calcular los puntos de todos los partidos terminados. Usá esto si los puntos
+            aparecen en 0 aunque la predicción y el resultado coincidan.
+          </p>
+          {lastError && isRecalculating === false && (
+            <p className="text-red-400 text-sm mb-3">⚠️ {lastError}</p>
+          )}
+          <button
+            onClick={triggerRecalc}
+            disabled={isRecalculating}
+            className="px-6 py-2.5 bg-emerald-700 hover:bg-emerald-600 text-white font-semibold rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {isRecalculating ? (
+              <>
+                <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Recalculando…
+              </>
+            ) : (
+              <><span>🔄</span> Recalcular todos los puntos</>
+            )}
+          </button>
+        </section>
+
+        {/* 4. Carga manual de resultado */}
         <section className="card p-6">
           <h2 className="text-lg font-semibold text-white mb-1">Cargar Resultado Manualmente</h2>
           <p className="text-slate-400 text-sm mb-5">

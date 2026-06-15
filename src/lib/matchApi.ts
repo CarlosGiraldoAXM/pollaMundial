@@ -27,6 +27,9 @@ interface RawMatch {
 let lastSuccessfulResult: ApiMatch[] = []
 
 export async function fetchAllMatches(): Promise<ApiMatch[]> {
+  // Traza de quién llamó esta función — visible en consola del navegador
+  console.trace('[matchApi] fetchAllMatches llamado')
+
   const controller = new AbortController()
   // La API worldcup26.ir puede tardar 20-30s en responder (JSON grande)
   const timeout = setTimeout(() => controller.abort(), 40_000)
@@ -71,17 +74,9 @@ function parseScore(val: string | number | null | undefined): number | null {
 
 function deriveStatus(m: RawMatch): 'scheduled' | 'live' | 'finished' {
   const elapsed = String(m.time_elapsed ?? '').toLowerCase().trim()
-
-  // Terminado: time_elapsed "finished" o campo finished "TRUE"
   if (elapsed === 'finished') return 'finished'
   if (String(m.finished ?? '').toUpperCase() === 'TRUE') return 'finished'
-
-  // En vivo: string "live" o tiempo numérico exacto ("45", "90+2", "HT")
-  // Conservador: solo patrones conocidos, nunca wildcard
   if (elapsed === 'live') return 'live'
-  if (/^\d+(\+\d+)?$/.test(elapsed)) return 'live'   // "45", "90+2"
-  if (elapsed === 'ht') return 'live'                  // medio tiempo
-
-  // Todo lo demás (notstarted, vacío, guión, pre, etc.) = programado
+  // Todo lo demás (notstarted, "0", vacío, desconocido) = programado
   return 'scheduled'
 }

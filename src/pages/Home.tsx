@@ -1,10 +1,7 @@
 import { RankingTable } from '../components/RankingTable'
 import { MatchList } from '../components/MatchList'
-import { useMatchUpdater } from '../hooks/useMatchUpdater'
 
 export function Home() {
-  useMatchUpdater()
-
   return (
     <main className="max-w-5xl mx-auto px-4 pb-12">
       {/* Hero */}

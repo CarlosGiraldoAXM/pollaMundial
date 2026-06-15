@@ -14,12 +14,12 @@ export function useRealtime() {
       .channel('realtime:participants')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'participants' },
+        { event: '*', schema: 'polla', table: 'participants' },
         () => invalidate()
       )
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'matches' },
+        { event: '*', schema: 'polla', table: 'matches' },
         () => {
           queryClient.invalidateQueries({ queryKey: ['matches'] })
           queryClient.invalidateQueries({ queryKey: ['participants'] })

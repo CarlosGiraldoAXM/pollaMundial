@@ -1,6 +1,7 @@
 import { useState, useRef, type DragEvent, type ChangeEvent } from 'react'
 import { parseExcel, type ParsedExcelData } from '../lib/excelParser'
 import { supabase } from '../lib/supabase'
+import { recalcAllPoints } from '../lib/scoring'
 
 interface Props {
   onSuccess?: () => void
@@ -82,13 +83,12 @@ export function ExcelUploader({ onSuccess }: Props) {
       const participantMap = new Map((participants ?? []).map(p => [p.name, p.id]))
       const matchMap = new Map((matches ?? []).map(m => [m.match_key, m.id]))
 
-      // 4. Upsert predictions
+      // 4. Upsert predictions — NO incluir points_earned para no resetear puntos calculados
       const predRows = parsed.predictions.map(pred => ({
         participant_id: participantMap.get(pred.participant_name),
         match_id: matchMap.get(pred.match_key),
         predicted_home: pred.predicted_home,
         predicted_away: pred.predicted_away,
-        points_earned: 0,
       })).filter(r => r.participant_id && r.match_id)
 
       // Batch in groups of 100
@@ -100,6 +100,10 @@ export function ExcelUploader({ onSuccess }: Props) {
         })
         setProgress(`Predicciones: ${Math.min(i + 100, predRows.length)}/${predRows.length}`)
       }
+
+      // 5. Recalcular puntos de partidos ya terminados (por si se re-sube el Excel)
+      setProgress('Recalculando puntos...')
+      await recalcAllPoints(supabase)
 
       setState('done')
       onSuccess?.()

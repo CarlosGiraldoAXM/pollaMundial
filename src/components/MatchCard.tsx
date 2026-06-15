@@ -1,5 +1,19 @@
 import type { Match } from '../lib/supabase'
-import { getFlag } from '../constants/flagEmoji'
+import { getFlagUrl } from '../constants/flagEmoji'
+
+function FlagImg({ team, className = '' }: { team: string; className?: string }) {
+  const url = getFlagUrl(team)
+  if (!url) return <span className={`text-slate-600 text-xs font-bold ${className}`}>{team.slice(0, 3)}</span>
+  return (
+    <img
+      src={url}
+      alt={team}
+      className={`object-cover rounded-sm shrink-0 ${className}`}
+      style={{ width: 28, height: 20 }}
+      onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+    />
+  )
+}
 
 interface Props {
   match: Match
@@ -53,7 +67,7 @@ export function MatchCard({ match, correctExact = 0, correctWinner = 0, totalPre
       <div className="flex items-center gap-3">
         {/* Home */}
         <div className="flex-1 flex items-center gap-2 min-w-0">
-          <span className="text-2xl shrink-0 leading-none">{getFlag(match.home_team)}</span>
+          <FlagImg team={match.home_team} />
           <span className="font-semibold text-white text-sm leading-snug">{match.home_team}</span>
         </div>
 
@@ -77,7 +91,7 @@ export function MatchCard({ match, correctExact = 0, correctWinner = 0, totalPre
         {/* Away */}
         <div className="flex-1 flex items-center justify-end gap-2 min-w-0">
           <span className="font-semibold text-white text-sm leading-snug text-right">{match.away_team}</span>
-          <span className="text-2xl shrink-0 leading-none">{getFlag(match.away_team)}</span>
+          <FlagImg team={match.away_team} />
         </div>
       </div>
 
