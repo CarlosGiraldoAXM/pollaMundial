@@ -102,14 +102,25 @@ export async function fetchAllMatches(forceRefresh = false): Promise<ApiMatch[]>
   }
   clearTimeout(timeout)
 
-  if (!res.ok) throw new Error(`API error: ${res.status}`)
+  if (!res.ok) {
+    // HTTP error (ej: 500, 403) — no borrar cache, retornar lo que haya
+    const stale = lsRead()
+    if (stale) {
+      console.warn(`API HTTP ${res.status} — usando cache de localStorage`)
+      memCache = stale.data
+      return stale.data
+    }
+    if (memCache.length) return memCache
+    throw new Error(`API error: ${res.status}`)
+  }
+
   const json = await res.json()
 
   const raw: RawMatch[] = Array.isArray(json)
     ? json
     : json.games ?? json.matches ?? json.data ?? []
 
-  memCache = raw.map(m => ({
+  const fresh = raw.map(m => ({
     id: String(m.id ?? m._id ?? ''),
     home_team: String(m.home_team_name_en ?? '').trim(),
     away_team: String(m.away_team_name_en ?? '').trim(),
@@ -123,9 +134,13 @@ export async function fetchAllMatches(forceRefresh = false): Promise<ApiMatch[]>
     away_scorers: m.away_scorers != null ? String(m.away_scorers) : null,
   })).filter(m => m.home_team && m.away_team)
 
-  // 3. Persistir en localStorage para la próxima visita
-  lsWrite(memCache)
-  return memCache
+  // Solo actualizar cache si la respuesta tiene datos válidos
+  // (evita borrar cache con una respuesta vacía/malformada de la API)
+  if (fresh.length > 0) {
+    memCache = fresh
+    lsWrite(memCache)
+  }
+  return memCache.length ? memCache : fresh
 }
 
 function parseScore(val: string | number | null | undefined): number | null {
