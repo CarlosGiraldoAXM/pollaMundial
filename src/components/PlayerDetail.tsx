@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import type { Participant, Match, Prediction } from '../lib/supabase'
+import { getFlagUrl } from '../constants/flagEmoji'
 
 interface PredictionRow {
   prediction: Prediction
@@ -28,6 +29,20 @@ async function fetchPlayerData(name: string): Promise<{ participant: Participant
     .sort((a, b) => (a.match.match_order ?? 0) - (b.match.match_order ?? 0))
 
   return { participant: p, rows }
+}
+
+function FlagImg({ team }: { team: string }) {
+  const url = getFlagUrl(team)
+  if (!url) return null
+  return (
+    <img
+      src={url}
+      alt={team}
+      className="rounded-sm shrink-0 object-cover"
+      style={{ width: 22, height: 15 }}
+      onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+    />
+  )
 }
 
 const POINTS_COLOR: Record<number, string> = {
@@ -68,25 +83,25 @@ export function PlayerDetail({ name }: Props) {
   return (
     <div className="space-y-6">
       {/* Player header */}
-      <div className="card p-6 flex items-center gap-6">
-        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-navy font-display text-3xl">
+      <div className="card p-5 flex items-center gap-4">
+        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-navy font-display text-2xl shrink-0">
           {participant.name[0]}
         </div>
-        <div>
-          <h1 className="text-2xl font-display tracking-wider text-white">{participant.name}</h1>
-          <p className="text-slate-400 text-sm">Participante · Polla Gorettiana</p>
+        <div className="min-w-0">
+          <h1 className="text-xl font-display tracking-wider text-white truncate">{participant.name}</h1>
+          <p className="text-slate-400 text-xs">Participante · Polla Gorettiana</p>
         </div>
-        <div className="ml-auto text-right">
-          <p className="font-display text-5xl text-yellow-400">{participant.total_points}</p>
-          <p className="text-slate-400 text-xs uppercase tracking-wider">puntos</p>
+        <div className="ml-auto text-right shrink-0">
+          <p className="font-display text-4xl text-yellow-400">{participant.total_points}</p>
+          <p className="text-slate-400 text-[10px] uppercase tracking-wider">puntos</p>
         </div>
       </div>
 
       {/* Predictions by phase */}
       {grouped.map(({ phase, rows: phaseRows }) => (
         <div key={phase} className="card overflow-hidden">
-          <div className="px-5 py-3 border-b border-white/5 bg-white/3">
-            <h3 className="text-sm font-semibold text-yellow-400 uppercase tracking-widest">
+          <div className="px-4 py-3 border-b border-white/5 bg-white/3">
+            <h3 className="text-xs font-semibold text-yellow-400 uppercase tracking-widest">
               {formatPhase(phase)}
             </h3>
           </div>
@@ -97,42 +112,44 @@ export function PlayerDetail({ name }: Props) {
               const hasResult = match.home_score !== null && match.away_score !== null
 
               return (
-                <div key={prediction.id} className="px-5 py-4 flex items-center gap-4">
-                  {/* Match */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 text-sm">
-                      <span className="text-white font-medium truncate">{match.home_team}</span>
-                      <span className="text-slate-500 shrink-0">vs</span>
-                      <span className="text-white font-medium truncate">{match.away_team}</span>
+                <div key={prediction.id} className="px-4 py-3">
+                  {/* Línea 1: equipos con banderas */}
+                  <div className="flex items-center gap-1.5 mb-2 min-w-0">
+                    <FlagImg team={match.home_team} />
+                    <span className="text-white font-semibold text-sm">{match.home_team}</span>
+                    <span className="text-slate-600 text-xs mx-0.5 shrink-0">vs</span>
+                    <span className="text-white font-semibold text-sm">{match.away_team}</span>
+                    <FlagImg team={match.away_team} />
+                  </div>
+
+                  {/* Línea 2: predicción, resultado y puntos */}
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] text-slate-500 uppercase tracking-wide">Pred</span>
+                      <span className="font-display text-lg text-slate-200 leading-none">
+                        {prediction.predicted_home}–{prediction.predicted_away}
+                      </span>
                     </div>
-                  </div>
 
-                  {/* Prediction */}
-                  <div className="text-center shrink-0">
-                    <p className="text-xs text-slate-500 mb-0.5">Predicción</p>
-                    <p className="font-display text-xl text-slate-200">
-                      {prediction.predicted_home} – {prediction.predicted_away}
-                    </p>
-                  </div>
-
-                  {/* Result */}
-                  <div className="text-center shrink-0">
-                    <p className="text-xs text-slate-500 mb-0.5">Resultado</p>
                     {hasResult ? (
-                      <p className="font-display text-xl text-yellow-400">
-                        {match.home_score} – {match.away_score}
-                      </p>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] text-slate-500 uppercase tracking-wide">Res</span>
+                        <span className="font-display text-lg text-yellow-400 leading-none">
+                          {match.home_score}–{match.away_score}
+                        </span>
+                      </div>
                     ) : (
-                      <p className="text-slate-600 text-sm">{match.status === 'live' ? '⚡ En vivo' : '–'}</p>
+                      <span className="text-[10px] text-slate-600">
+                        {match.status === 'live' ? '⚡ En vivo' : '–'}
+                      </span>
+                    )}
+
+                    {finished && (
+                      <span className={`ml-auto text-xs px-2.5 py-1 rounded-full border font-semibold shrink-0 ${POINTS_COLOR[pts] ?? POINTS_COLOR[0]}`}>
+                        {POINTS_LABEL[pts] ?? '–'} · {pts}pts
+                      </span>
                     )}
                   </div>
-
-                  {/* Points badge */}
-                  {finished && (
-                    <span className={`text-xs px-2.5 py-1 rounded-full border font-semibold shrink-0 ${POINTS_COLOR[pts] ?? POINTS_COLOR[0]}`}>
-                      {POINTS_LABEL[pts] ?? '–'} · {pts}pts
-                    </span>
-                  )}
                 </div>
               )
             })}
@@ -155,9 +172,9 @@ function groupByPhase(rows: PredictionRow[]): Array<{ phase: string; rows: Predi
 }
 
 const PHASE_LABELS: Record<string, string> = {
-  PRIMERA_FECHA: 'Fase de Grupos · Fecha 1',
-  SEGUNDA_FECHA: 'Fase de Grupos · Fecha 2',
-  TERCERA_FECHA: 'Fase de Grupos · Fecha 3',
+  PRIMERA_FECHA: 'Fecha 1 · Grupos',
+  SEGUNDA_FECHA: 'Fecha 2 · Grupos',
+  TERCERA_FECHA: 'Fecha 3 · Grupos',
   DIECISEISAVOS: 'Dieciseisavos de Final',
   OCTAVOS: 'Octavos de Final',
   CUARTOS: 'Cuartos de Final',
@@ -172,11 +189,11 @@ function formatPhase(phase: string): string {
 function PlayerSkeleton() {
   return (
     <div className="space-y-6 animate-pulse">
-      <div className="card p-6 h-28 bg-white/5" />
+      <div className="card p-5 h-24 bg-white/5" />
       <div className="card overflow-hidden">
-        <div className="px-5 py-3 border-b border-white/5 h-10 bg-white/5" />
+        <div className="px-4 py-3 border-b border-white/5 h-10 bg-white/5" />
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="px-5 py-4 h-16 border-b border-white/5 bg-white/3" />
+          <div key={i} className="px-4 py-3 h-16 border-b border-white/5 bg-white/3" />
         ))}
       </div>
     </div>
