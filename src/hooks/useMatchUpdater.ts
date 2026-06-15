@@ -10,10 +10,11 @@ const LIVE_INTERVAL = 90_000          // 90s cuando hay partido en vivo (API tar
 const ACTIVE_INTERVAL = 15 * 60_000   // 15 min en horario de partidos sin vivos
 
 // Colombia = UTC-5
-// Partidos: 11am–11pm COL = 16:00–04:00 UTC (cruza medianoche UTC)
+// Partidos: 11am–1am COL (partido que empieza 11pm termina ~1am)
+// = 16:00–06:00 UTC
 function isMatchHour(): boolean {
   const h = new Date().getUTCHours()
-  return h >= 16 || h < 4
+  return h >= 16 || h < 6
 }
 
 export function useMatchUpdater() {
