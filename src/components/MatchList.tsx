@@ -4,6 +4,8 @@ import { supabase } from '../lib/supabase'
 import type { Match } from '../lib/supabase'
 import { MatchCard } from './MatchCard'
 import { calcPoints } from '../lib/scoring'
+import { fetchOFBSchedule } from '../lib/openfootball'
+import { normalizeTeamName } from '../constants/teamMapping'
 
 interface MatchWithStats extends Match {
   correctExact: number
@@ -49,6 +51,14 @@ const PHASES = [
   { key: 'FINAL', label: 'Final' },
 ]
 
+// Clave de lookup: misma normalización que openfootball.ts
+function norm(name: string): string {
+  return name.trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+}
+function pairKey(a: string, b: string): string {
+  return [norm(a), norm(b)].sort().join('::')
+}
+
 export function MatchList() {
   const [phase, setPhase] = useState('all')
 
@@ -56,6 +66,14 @@ export function MatchList() {
     queryKey: ['matches'],
     queryFn: fetchMatchesWithStats,
     refetchInterval: 60_000,
+  })
+
+  // Horarios de Colombia desde openfootball (datos estáticos, sin refetch)
+  const { data: ofbSchedule = new Map() } = useQuery({
+    queryKey: ['ofb-schedule'],
+    queryFn: fetchOFBSchedule,
+    staleTime: Infinity,
+    retry: 1,
   })
 
   const STATUS_ORDER = { live: 0, scheduled: 1, finished: 2 }
@@ -111,15 +129,22 @@ export function MatchList() {
         </div>
       ) : (
         <div className="p-4 space-y-3 max-h-[600px] overflow-y-auto scrollbar-thin">
-          {filtered.map(m => (
-            <MatchCard
-              key={m.id}
-              match={m}
-              correctExact={m.correctExact}
-              correctWinner={m.correctWinner}
-              totalPredictions={m.total}
-            />
-          ))}
+          {filtered.map(m => {
+            // Traduce nombre español del Excel → inglés para buscar en openfootball
+            const homeEN = normalizeTeamName(m.home_team)
+            const awayEN = normalizeTeamName(m.away_team)
+            const colombiaTime = ofbSchedule.get(pairKey(homeEN, awayEN)) ?? null
+            return (
+              <MatchCard
+                key={m.id}
+                match={m}
+                correctExact={m.correctExact}
+                correctWinner={m.correctWinner}
+                totalPredictions={m.total}
+                colombiaTime={colombiaTime}
+              />
+            )
+          })}
           {filtered.length === 0 && (
             <div className="py-12 text-center text-slate-600">
               <p className="text-3xl mb-2">📅</p>

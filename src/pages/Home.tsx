@@ -1,9 +1,18 @@
 import { useState } from 'react'
 import { RankingTable } from '../components/RankingTable'
 import { MatchList } from '../components/MatchList'
+import { GroupStandings } from '../components/GroupStandings'
+
+type Tab = 'ranking' | 'partidos' | 'grupos'
+
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'ranking', label: '🏆 Ranking' },
+  { key: 'partidos', label: '⚽ Partidos' },
+  { key: 'grupos', label: '📊 Grupos' },
+]
 
 export function Home() {
-  const [tab, setTab] = useState<'ranking' | 'partidos'>('ranking')
+  const [tab, setTab] = useState<Tab>('ranking')
 
   return (
     <main className="max-w-5xl mx-auto px-4 pb-12">
@@ -25,39 +34,36 @@ export function Home() {
         </div>
       </div>
 
-      {/* Tabs — solo visibles en móvil */}
-      <div className="flex lg:hidden gap-2 mb-4">
-        <button
-          onClick={() => setTab('ranking')}
-          className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all duration-150 flex items-center justify-center gap-2 ${
-            tab === 'ranking'
-              ? 'bg-yellow-400 text-[#060e1a] shadow-[0_0_16px_rgba(245,197,24,0.3)]'
-              : 'bg-white/5 text-slate-400 border border-white/10'
-          }`}
-        >
-          🏆 Ranking
-        </button>
-        <button
-          onClick={() => setTab('partidos')}
-          className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all duration-150 flex items-center justify-center gap-2 ${
-            tab === 'partidos'
-              ? 'bg-yellow-400 text-[#060e1a] shadow-[0_0_16px_rgba(245,197,24,0.3)]'
-              : 'bg-white/5 text-slate-400 border border-white/10'
-          }`}
-        >
-          ⚽ Partidos
-        </button>
+      {/* Tabs */}
+      <div className="flex gap-2 mb-4">
+        {TABS.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all duration-150 flex items-center justify-center gap-2 ${
+              tab === t.key
+                ? 'bg-yellow-400 text-[#060e1a] shadow-[0_0_16px_rgba(245,197,24,0.3)]'
+                : 'bg-white/5 text-slate-400 border border-white/10'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
-      {/* Content — grid en desktop, tabs en móvil */}
-      <div className="grid lg:grid-cols-2 gap-5 items-start">
-        <div className={tab === 'ranking' ? 'block' : 'hidden lg:block'}>
-          <RankingTable />
+      {/* Content */}
+      {tab === 'grupos' ? (
+        <GroupStandings />
+      ) : (
+        <div className="grid lg:grid-cols-2 gap-5 items-start">
+          <div className={tab === 'ranking' ? 'block' : 'hidden lg:block'}>
+            <RankingTable />
+          </div>
+          <div className={tab === 'partidos' ? 'block' : 'hidden lg:block'}>
+            <MatchList />
+          </div>
         </div>
-        <div className={tab === 'partidos' ? 'block' : 'hidden lg:block'}>
-          <MatchList />
-        </div>
-      </div>
+      )}
     </main>
   )
 }

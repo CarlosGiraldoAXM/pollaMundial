@@ -1,0 +1,72 @@
+const OFB_URL =
+  'https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json'
+
+const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+
+interface OFBMatch {
+  date: string    // "2026-06-11"
+  time?: string   // "13:00 UTC-6"  ← plain strings, offset incluido
+  team1: string   // "Mexico"        ← string directo, NO objeto
+  team2: string   // "South Africa"
+}
+
+interface OFBData {
+  matches?: OFBMatch[]
+  rounds?: { matches: OFBMatch[] }[]
+}
+
+function norm(name: string): string {
+  return name.trim().toUpperCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+}
+
+export function pairKey(a: string, b: string): string {
+  return [norm(a), norm(b)].sort().join('::')
+}
+
+// "13:00 UTC-6" → "11 jun · 14:00"  (Colombia = UTC-5)
+function toColombiaTime(date: string, time: string): string | null {
+  // Captura hora, minuto y offset (ej: UTC-6 → offset=-6)
+  const m = time.match(/^(\d{1,2}):(\d{2})\s*UTC([+-]\d+)$/)
+  if (!m) return null
+
+  const localHour  = parseInt(m[1])
+  const localMin   = parseInt(m[2])
+  const utcOffset  = parseInt(m[3])   // -6 = UTC-6
+
+  // Convertir a UTC: UTC = hora_local - offset
+  const utcMinutes = localHour * 60 + localMin - utcOffset * 60
+  // Colombia es UTC-5
+  const colMinutes = utcMinutes - 5 * 60
+
+  // Normalizar al rango [0, 24h)
+  const wrapped  = ((colMinutes % 1440) + 1440) % 1440
+  const colHour  = Math.floor(wrapped / 60)
+  const colMin   = wrapped % 60
+
+  // Ajustar el día si el wrap cruzó medianoche
+  const [, monthStr, dayStr] = date.split('-')
+  let day = parseInt(dayStr)
+  if (colMinutes < 0)    day--
+  if (colMinutes >= 1440) day++
+
+  return `${day} ${MONTHS[parseInt(monthStr) - 1]} · ${String(colHour).padStart(2, '0')}:${String(colMin).padStart(2, '0')}`
+}
+
+// Retorna Map<"TEAM1::TEAM2" (sorted, normalizado) → "11 jun · 14:00">
+export async function fetchOFBSchedule(): Promise<Map<string, string>> {
+  const res = await fetch(OFB_URL)
+  const data: OFBData = await res.json()
+
+  const all: OFBMatch[] = []
+  if (data.matches) all.push(...data.matches)
+  else if (data.rounds) data.rounds.forEach(r => all.push(...(r.matches ?? [])))
+
+  const schedule = new Map<string, string>()
+  for (const m of all) {
+    if (!m.date || !m.time || !m.team1 || !m.team2) continue
+    const colTime = toColombiaTime(m.date, m.time)
+    if (colTime) schedule.set(pairKey(m.team1, m.team2), colTime)
+  }
+  return schedule
+}

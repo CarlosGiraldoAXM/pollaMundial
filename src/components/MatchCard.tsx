@@ -1,6 +1,7 @@
 import type { Match } from '../lib/supabase'
 import { getFlagUrl } from '../constants/flagEmoji'
 
+
 function FlagImg({ team, className = '' }: { team: string; className?: string }) {
   const url = getFlagUrl(team)
   if (!url) return <span className={`text-slate-600 text-xs font-bold ${className}`}>{team.slice(0, 3)}</span>
@@ -20,6 +21,7 @@ interface Props {
   correctExact?: number
   correctWinner?: number
   totalPredictions?: number
+  colombiaTime?: string | null
 }
 
 const PHASE_LABELS: Record<string, string> = {
@@ -33,7 +35,7 @@ const PHASE_LABELS: Record<string, string> = {
   FINAL: 'Gran Final',
 }
 
-export function MatchCard({ match, correctExact = 0, correctWinner = 0, totalPredictions = 0 }: Props) {
+export function MatchCard({ match, correctExact = 0, correctWinner = 0, totalPredictions = 0, colombiaTime }: Props) {
   const isFinished = match.status === 'finished'
   const isLive = match.status === 'live'
   const hasScore = match.home_score !== null && match.away_score !== null
@@ -42,9 +44,14 @@ export function MatchCard({ match, correctExact = 0, correctWinner = 0, totalPre
     <div className="card-match p-4">
       {/* Phase + status */}
       <div className="flex items-center justify-between mb-3">
-        <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">
-          {PHASE_LABELS[match.phase] ?? match.phase}
-        </span>
+        <div>
+          <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">
+            {PHASE_LABELS[match.phase] ?? match.phase}
+          </span>
+          {colombiaTime && (
+            <p className="text-[10px] text-slate-600 mt-0.5">{colombiaTime}</p>
+          )}
+        </div>
         {isLive && (
           <span className="flex items-center gap-1.5 text-[10px] font-bold text-red-400 bg-red-400/10 px-2.5 py-1 rounded-full border border-red-400/25">
             <span className="live-dot w-1.5 h-1.5 rounded-full bg-red-400 inline-block" />

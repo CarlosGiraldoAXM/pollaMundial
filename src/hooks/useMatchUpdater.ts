@@ -6,6 +6,13 @@ import { supabase } from '../lib/supabase'
 import type { Match } from '../lib/supabase'
 import { normalizeTeamName } from '../constants/teamMapping'
 
+// Convierte "MM/DD/YYYY HH:mm" → "YYYY-MM-DDTHH:mm:00" que PostgreSQL acepta como timestamptz
+function apiDateToISO(localDate: string): string | null {
+  const m = localDate.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})/)
+  if (!m) return null
+  return `${m[3]}-${m[1]}-${m[2]}T${m[4]}:${m[5]}:00`
+}
+
 export function useMatchUpdater() {
   const queryClient = useQueryClient()
   const isFetchingRef = useRef(false)
@@ -25,7 +32,7 @@ export function useMatchUpdater() {
     try {
       // 1. Traer datos de la API (20-30s) y de la DB en paralelo
       const [apiMatches, { data: dbMatches }] = await Promise.all([
-        fetchAllMatches(),
+        fetchAllMatches(true), // siempre datos frescos desde el panel admin
         supabase.from('matches').select('*'),
       ])
       if (!dbMatches) return
@@ -46,14 +53,16 @@ export function useMatchUpdater() {
           api.home_score !== null &&
           api.away_score !== null &&
           (dbMatch.home_score !== api.home_score || dbMatch.away_score !== api.away_score)
+        const dateChanged = api.date && dbMatch.match_date !== api.date
 
-        if (!statusChanged && !scoreChanged) continue
+        if (!statusChanged && !scoreChanged && !dateChanged) continue
 
         const payload: Record<string, unknown> = { status: api.status, api_match_id: api.id }
         if (api.home_score !== null && api.away_score !== null) {
           payload.home_score = api.home_score
           payload.away_score = api.away_score
         }
+        if (api.date) payload.match_date = apiDateToISO(api.date)
         await supabase.from('matches').update(payload).eq('id', dbMatch.id)
 
         if (api.status === 'finished') anyFinishedChange = true

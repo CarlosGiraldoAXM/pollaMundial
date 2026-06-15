@@ -76,7 +76,31 @@ const CODES: Record<string, string> = {
   'INDONESIA': 'id',
 }
 
+// English names as returned by the API (home_team_name_en)
+const CODES_EN: Record<string, string> = {
+  'MEXICO': 'mx', 'ECUADOR': 'ec', 'JAMAICA': 'jm', 'VENEZUELA': 've',
+  'UNITED STATES': 'us', 'PANAMA': 'pa', 'URUGUAY': 'uy', 'UZBEKISTAN': 'uz',
+  'CANADA': 'ca', 'HONDURAS': 'hn', 'PARAGUAY': 'py', 'NEW ZEALAND': 'nz',
+  'MOROCCO': 'ma', 'PORTUGAL': 'pt', 'ARGENTINA': 'ar', 'HAITI': 'ht',
+  'SPAIN': 'es', 'COLOMBIA': 'co', 'BRAZIL': 'br', 'SAUDI ARABIA': 'sa',
+  'FRANCE': 'fr', 'UKRAINE': 'ua', 'EGYPT': 'eg',
+  'DEMOCRATIC REPUBLIC OF THE CONGO': 'cd',
+  'GERMANY': 'de', 'JAPAN': 'jp', 'CHILE': 'cl', 'BELGIUM': 'be',
+  'ENGLAND': 'gb-eng', 'SENEGAL': 'sn', 'BOSNIA AND HERZEGOVINA': 'ba', 'ALGERIA': 'dz',
+  'NETHERLANDS': 'nl', 'TURKEY': 'tr', 'GEORGIA': 'ge', 'THAILAND': 'th',
+  'AUSTRALIA': 'au', 'NIGERIA': 'ng', 'ROMANIA': 'ro', 'SOUTH KOREA': 'kr',
+  'CROATIA': 'hr', 'SLOVAKIA': 'sk', 'IRAN': 'ir', 'PERU': 'pe',
+  'SWITZERLAND': 'ch', 'NORWAY': 'no', 'COSTA RICA': 'cr', 'ISRAEL': 'il',
+  'SERBIA': 'rs', 'DENMARK': 'dk', 'FINLAND': 'fi', 'SLOVENIA': 'si',
+  'HUNGARY': 'hu', 'GREECE': 'gr', 'POLAND': 'pl', 'ALBANIA': 'al',
+  'KAZAKHSTAN': 'kz', 'VIETNAM': 'vn', 'INDONESIA': 'id', 'CAPE VERDE': 'cv',
+  'SCOTLAND': 'gb-sct', 'CZECH REPUBLIC': 'cz', 'SWEDEN': 'se', 'IRAQ': 'iq',
+  'IVORY COAST': 'ci', 'TUNISIA': 'tn', 'JORDAN': 'jo', 'CURAÇAO': 'cw',
+  'SOUTH AFRICA': 'za',
+}
+
 export function getFlagUrl(teamName: string): string | null {
-  const code = CODES[teamName.trim().toUpperCase()]
+  const key = teamName.trim().toUpperCase()
+  const code = CODES[key] ?? CODES_EN[key]
   return code ? `https://flagcdn.com/w40/${code}.png` : null
 }
