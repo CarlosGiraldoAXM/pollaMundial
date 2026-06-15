@@ -80,8 +80,3 @@ export function getFlagUrl(teamName: string): string | null {
   const code = CODES[teamName.trim().toUpperCase()]
   return code ? `https://flagcdn.com/w40/${code}.png` : null
 }
-
-// Kept for backwards compat — returns empty string instead of emoji on no match
-export function getFlag(teamName: string): string {
-  return ''
-}

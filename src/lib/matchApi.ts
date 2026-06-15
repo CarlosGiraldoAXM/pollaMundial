@@ -27,9 +27,6 @@ interface RawMatch {
 let lastSuccessfulResult: ApiMatch[] = []
 
 export async function fetchAllMatches(): Promise<ApiMatch[]> {
-  // Traza de quién llamó esta función — visible en consola del navegador
-  console.trace('[matchApi] fetchAllMatches llamado')
-
   const controller = new AbortController()
   // La API worldcup26.ir puede tardar 20-30s en responder (JSON grande)
   const timeout = setTimeout(() => controller.abort(), 40_000)
