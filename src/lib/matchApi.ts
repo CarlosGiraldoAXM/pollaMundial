@@ -2,8 +2,8 @@ const API_URL = 'https://worldcup26.ir/get/games'
 
 // Versión del cache — incrementar si cambia el shape de ApiMatch
 const LS_KEY = 'polla_api_matches_v1'
-// Datos frescos durante 3 minutos; pasado ese tiempo se reintenta la API
-const LS_TTL = 3 * 60 * 1000
+// Datos frescos durante 2 horas; un partido dura ~110 min
+const LS_TTL = 2 * 60 * 60 * 1000
 
 export interface ApiMatch {
   id: string
@@ -45,6 +45,11 @@ function lsRead(): LsCache | null {
   } catch {
     return null
   }
+}
+
+/** Para que el componente pueda pre-cargar datos del cache sin esperar la query */
+export function getApiCacheSnapshot(): { data: ApiMatch[]; ts: number } | null {
+  return lsRead()
 }
 
 function lsWrite(data: ApiMatch[]) {

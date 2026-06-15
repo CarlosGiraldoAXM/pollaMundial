@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { fetchAllMatches } from '../lib/matchApi'
+import { fetchAllMatches, getApiCacheSnapshot } from '../lib/matchApi'
 import { computeGroupStandings } from '../lib/groupStandings'
 import { computeTopScorers } from '../lib/scorers'
 import type { GroupStanding, TeamStanding } from '../lib/groupStandings'
@@ -166,12 +166,16 @@ export function GroupStandings() {
   const [subView, setSubView] = useState<SubView>('grupos')
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null)
 
-  const { data: apiMatches = [], isLoading } = useQuery({
+  const { data: apiMatches = [], isLoading, isFetching } = useQuery({
     queryKey: ['api-matches'],
     queryFn: () => fetchAllMatches(),
-    staleTime: 3 * 60 * 1000,   // mismo TTL que el localStorage — no refetch si los datos son frescos
-    refetchInterval: 3 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
+    staleTime: 2 * 60 * 60 * 1000,
+    refetchInterval: 2 * 60 * 60 * 1000,
+    gcTime: 3 * 60 * 60 * 1000,
+    // Muestra datos del localStorage inmediatamente mientras refesca en background
+    initialData: () => getApiCacheSnapshot()?.data,
+    initialDataUpdatedAt: () => getApiCacheSnapshot()?.ts ?? 0,
+    placeholderData: prev => prev,
   })
 
   const groups = computeGroupStandings(apiMatches)
@@ -193,6 +197,9 @@ export function GroupStandings() {
                 ? `Clasificación fase de grupos · ${groups.length} grupos`
                 : `${scorers.length} goleadores · ${scorers.reduce((s, g) => s + g.goals, 0)} goles`
               }
+              {isFetching && !isLoading && (
+                <span className="ml-2 text-slate-700 animate-pulse">· actualizando…</span>
+              )}
             </p>
           </div>
         </div>

@@ -76,6 +76,7 @@ export function useMatchUpdater() {
       queryClient.invalidateQueries({ queryKey: ['matches'] })
       queryClient.invalidateQueries({ queryKey: ['participants'] })
       queryClient.invalidateQueries({ queryKey: ['player'] })
+      queryClient.invalidateQueries({ queryKey: ['api-matches'] })
       setLastUpdated(new Date())
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
