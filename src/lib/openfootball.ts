@@ -3,16 +3,32 @@ const OFB_URL =
 
 const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
 
+interface OFBGoal {
+  name: string
+  minute: string
+}
+
 interface OFBMatch {
   date: string    // "2026-06-11"
   time?: string   // "13:00 UTC-6"  ← plain strings, offset incluido
   team1: string   // "Mexico"        ← string directo, NO objeto
   team2: string   // "South Africa"
+  score?: { ft: [number, number]; ht?: [number, number] }
+  goals1?: OFBGoal[]
+  goals2?: OFBGoal[]
 }
 
 interface OFBData {
   matches?: OFBMatch[]
   rounds?: { matches: OFBMatch[] }[]
+}
+
+export interface OFBResult {
+  team1: string
+  team2: string
+  homeScore: number
+  awayScore: number
+  date: string
 }
 
 function norm(name: string): string {
@@ -53,15 +69,19 @@ function toColombiaTime(date: string, time: string): string | null {
   return `${day} ${MONTHS[parseInt(monthStr) - 1]} · ${String(colHour).padStart(2, '0')}:${String(colMin).padStart(2, '0')}`
 }
 
-// Retorna Map<"TEAM1::TEAM2" (sorted, normalizado) → "11 jun · 14:00">
-export async function fetchOFBSchedule(): Promise<Map<string, string>> {
+async function fetchOFBData(): Promise<OFBMatch[]> {
   const res = await fetch(OFB_URL)
+  if (!res.ok) throw new Error(`openfootball HTTP ${res.status}`)
   const data: OFBData = await res.json()
-
   const all: OFBMatch[] = []
   if (data.matches) all.push(...data.matches)
   else if (data.rounds) data.rounds.forEach(r => all.push(...(r.matches ?? [])))
+  return all
+}
 
+// Retorna Map<"TEAM1::TEAM2" (sorted, normalizado) → "11 jun · 14:00">
+export async function fetchOFBSchedule(): Promise<Map<string, string>> {
+  const all = await fetchOFBData()
   const schedule = new Map<string, string>()
   for (const m of all) {
     if (!m.date || !m.time || !m.team1 || !m.team2) continue
@@ -69,4 +89,18 @@ export async function fetchOFBSchedule(): Promise<Map<string, string>> {
     if (colTime) schedule.set(pairKey(m.team1, m.team2), colTime)
   }
   return schedule
+}
+
+// Retorna solo los partidos que ya tienen resultado final (score.ft)
+export async function fetchOFBResults(): Promise<OFBResult[]> {
+  const all = await fetchOFBData()
+  return all
+    .filter(m => m.score?.ft)
+    .map(m => ({
+      team1: m.team1,
+      team2: m.team2,
+      homeScore: m.score!.ft[0],
+      awayScore: m.score!.ft[1],
+      date: m.date,
+    }))
 }

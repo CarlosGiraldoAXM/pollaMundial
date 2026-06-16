@@ -47,6 +47,8 @@ export function useMatchUpdater() {
             normalizeTeamName(m.away_team).toLowerCase() === api.away_team.toLowerCase()
         )
         if (!dbMatch) continue
+        // Partido ya confirmado — ignorar lo que diga el API para evitar corrupciones
+        if (dbMatch.status === 'finished') continue
 
         const statusChanged = dbMatch.status !== api.status
         const scoreChanged =

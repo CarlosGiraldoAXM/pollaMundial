@@ -4,12 +4,14 @@ import { useAuth } from '../hooks/useAuth'
 import { ExcelUploader } from '../components/ExcelUploader'
 import { ManualResultUpdater } from '../components/ManualResultUpdater'
 import { useMatchUpdater } from '../hooks/useMatchUpdater'
+import { useOFBUpdater } from '../hooks/useOFBUpdater'
 import { useQueryClient } from '@tanstack/react-query'
 
 export function Admin() {
   const { isAuthenticated, logout } = useAuth()
   const navigate = useNavigate()
   const { triggerUpdate, isFetching, triggerRecalc, isRecalculating, lastUpdated, lastError } = useMatchUpdater()
+  const { triggerOFBUpdate, isFetching: isOFBFetching, lastUpdated: ofbLastUpdated, lastError: ofbError, summary: ofbSummary } = useOFBUpdater()
   const queryClient = useQueryClient()
 
   useEffect(() => {
@@ -142,16 +144,64 @@ export function Admin() {
           </button>
         </section>
 
-        {/* 4. Carga manual de resultado */}
+        {/* 4. Sincronizar desde openfootball */}
+        <section className="card p-6">
+          <h2 className="text-lg font-semibold text-white mb-1">Sincronizar desde openfootball.github.io</h2>
+          <p className="text-slate-400 text-sm mb-4">
+            Alternativa cuando worldcup26.ir no responde. Lee resultados finales del JSON de openfootball,
+            actualiza los marcadores en la base de datos y recalcula puntos automáticamente.
+          </p>
+
+          <div className="mb-4 p-3 rounded-lg bg-white/3 border border-white/8 text-sm space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500 text-xs w-28 shrink-0">Estado:</span>
+              {isOFBFetching ? (
+                <span className="flex items-center gap-2 text-yellow-400">
+                  <span className="inline-block w-3 h-3 border-2 border-yellow-400 border-t-transparent rounded-full animate-spin" />
+                  Consultando openfootball…
+                </span>
+              ) : ofbError ? (
+                <span className="text-red-400">⚠️ {ofbError}</span>
+              ) : ofbSummary ? (
+                <span className="text-emerald-400">✓ {ofbSummary}</span>
+              ) : (
+                <span className="text-slate-600">En espera</span>
+              )}
+            </div>
+            {ofbLastUpdated && (
+              <div className="flex items-center gap-2">
+                <span className="text-slate-500 text-xs w-28 shrink-0">Última consulta:</span>
+                <span className="text-slate-300">{formatTime(ofbLastUpdated)}</span>
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={triggerOFBUpdate}
+            disabled={isOFBFetching}
+            className="px-6 py-2.5 bg-emerald-700 hover:bg-emerald-600 text-white font-semibold rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {isOFBFetching ? (
+              <>
+                <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Sincronizando…
+              </>
+            ) : (
+              <><span>⚽</span> Sincronizar resultados desde openfootball</>
+            )}
+          </button>
+        </section>
+
+        {/* 5. Carga manual de resultado */}
         <section className="card p-6">
           <h2 className="text-lg font-semibold text-white mb-1">Cargar Resultado Manualmente</h2>
           <p className="text-slate-400 text-sm mb-5">
-            Usá esto si la API no está disponible. Los puntos se recalculan automáticamente.
+            Usá esto si ninguna API está disponible. Los puntos se recalculan automáticamente.
           </p>
           <ManualResultUpdater />
         </section>
 
-        {/* 4. Sistema de puntuación */}
+        {/* 6. Sistema de puntuación */}
         <section className="card p-6 border-white/5">
           <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3">Sistema de Puntuación</h2>
           <div className="space-y-2">

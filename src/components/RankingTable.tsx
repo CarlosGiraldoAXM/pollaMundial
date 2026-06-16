@@ -8,6 +8,7 @@ import { calcPoints } from '../lib/scoring'
 interface ParticipantRow extends Participant {
   tentativePoints: number
   totalWithTentative: number
+  exactScores: number
 }
 
 async function fetchRankingData(): Promise<{ rows: ParticipantRow[]; hasLive: boolean }> {
@@ -16,14 +17,22 @@ async function fetchRankingData(): Promise<{ rows: ParticipantRow[]; hasLive: bo
     { data: liveMatches },
     { data: allPreds },
   ] = await Promise.all([
-    supabase.from('participants').select('*').order('total_points', { ascending: false }),
+    supabase.from('participants').select('*'),
     supabase.from('matches').select('id, home_score, away_score').eq('status', 'live'),
-    supabase.from('predictions').select('participant_id, match_id, predicted_home, predicted_away'),
+    supabase.from('predictions').select('participant_id, match_id, predicted_home, predicted_away, points_earned'),
   ])
 
   const live = liveMatches ?? []
   const preds = allPreds ?? []
   const liveIds = new Set(live.map(m => m.id))
+
+  // Marcadores exactos confirmados por participante (points_earned === 3)
+  const exactMap: Record<string, number> = {}
+  for (const p of preds) {
+    if (p.points_earned === 3) {
+      exactMap[p.participant_id] = (exactMap[p.participant_id] ?? 0) + 1
+    }
+  }
 
   // Puntos tentativos por participante (sumando todos los partidos en vivo)
   const tentativeMap: Record<string, number> = {}
@@ -42,12 +51,14 @@ async function fetchRankingData(): Promise<{ rows: ParticipantRow[]; hasLive: bo
     ...p,
     tentativePoints: tentativeMap[p.id] ?? 0,
     totalWithTentative: p.total_points + (tentativeMap[p.id] ?? 0),
+    exactScores: exactMap[p.id] ?? 0,
   }))
 
-  // Con partidos en vivo, reordenar por puntos reales + tentativos
-  if (live.length > 0) {
-    rows.sort((a, b) => b.totalWithTentative - a.totalWithTentative)
-  }
+  // Ordenar siempre client-side: 1° total de puntos, 2° marcadores exactos como desempate
+  rows.sort((a, b) =>
+    b.totalWithTentative - a.totalWithTentative ||
+    b.exactScores - a.exactScores
+  )
 
   return { rows, hasLive: live.length > 0 }
 }
@@ -102,9 +113,10 @@ export function RankingTable() {
       </div>
 
       {/* Column labels */}
-      <div className="grid grid-cols-[3rem_1fr_auto] px-3 py-2 border-b border-white/5">
+      <div className="grid grid-cols-[3rem_1fr_3rem_auto] px-3 py-2 border-b border-white/5">
         <span className="text-[10px] text-slate-600 uppercase tracking-wider text-center">#</span>
         <span className="text-[10px] text-slate-600 uppercase tracking-wider pl-2">Jugador</span>
+        <span className="text-[10px] text-slate-600 uppercase tracking-wider text-center" title="Marcadores exactos">🎯</span>
         <span className="text-[10px] text-slate-600 uppercase tracking-wider pr-3">Pts</span>
       </div>
 
@@ -113,7 +125,7 @@ export function RankingTable() {
           <div
             key={p.id}
             onClick={() => navigate(`/jugador/${encodeURIComponent(p.name)}`)}
-            className={`grid grid-cols-[3rem_1fr_auto] items-center cursor-pointer transition-all duration-150 hover:bg-white/5 ${ROW_CLASS[i] ?? ''}`}
+            className={`grid grid-cols-[3rem_1fr_3rem_auto] items-center cursor-pointer transition-all duration-150 hover:bg-white/5 ${ROW_CLASS[i] ?? ''}`}
           >
             {/* Rank */}
             <div className="py-3.5 text-center">
@@ -131,6 +143,14 @@ export function RankingTable() {
               <span className={`truncate text-sm ${NAME_CLASS[i] ?? 'text-slate-300'}`}>
                 {p.name}
               </span>
+            </div>
+
+            {/* Marcadores exactos */}
+            <div className="py-3.5 text-center">
+              {p.exactScores > 0
+                ? <span className="text-sm font-semibold text-emerald-400 tabular-nums">{p.exactScores}</span>
+                : <span className="text-slate-700 text-xs">—</span>
+              }
             </div>
 
             {/* Points: real + tentativo */}
@@ -155,12 +175,15 @@ export function RankingTable() {
         </div>
       )}
 
-      {hasLive && (
-        <div className="px-4 py-2.5 border-t border-white/5 flex items-center gap-2 text-[11px] text-slate-500">
-          <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
-          Los puntos <span className="text-red-400 font-semibold mx-0.5">+N</span> son tentativos según el marcador actual
-        </div>
-      )}
+      <div className="px-4 py-2.5 border-t border-white/5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-slate-600">
+        <span>🎯 Marcadores exactos · desempate si hay igualdad de puntos</span>
+        {hasLive && (
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+            <span>Puntos <span className="text-red-400 font-semibold">+N</span> tentativos según marcador actual</span>
+          </span>
+        )}
+      </div>
     </div>
   )
 }
@@ -173,12 +196,13 @@ function RankingSkeleton() {
         <div className="h-5 bg-white/10 rounded w-40" />
       </div>
       {Array.from({ length: 8 }).map((_, i) => (
-        <div key={i} className="grid grid-cols-[3rem_1fr_auto] items-center px-3 py-3.5 border-b border-white/5 gap-3">
+        <div key={i} className="grid grid-cols-[3rem_1fr_3rem_auto] items-center px-3 py-3.5 border-b border-white/5 gap-3">
           <div className="h-5 w-5 bg-white/8 rounded mx-auto" />
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-white/8 rounded-full shrink-0" />
             <div className="h-4 bg-white/8 rounded flex-1" />
           </div>
+          <div className="h-4 w-5 bg-white/8 rounded mx-auto" />
           <div className="h-7 w-8 bg-white/8 rounded mr-2" />
         </div>
       ))}

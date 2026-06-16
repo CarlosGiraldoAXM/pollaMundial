@@ -78,6 +78,7 @@ export function PlayerDetail({ name }: Props) {
   }
 
   const { participant, rows } = data
+  const exactScores = rows.filter(r => r.prediction.points_earned === 3).length
   const grouped = groupByPhase(rows)
 
   return (
@@ -92,8 +93,10 @@ export function PlayerDetail({ name }: Props) {
           <p className="text-slate-400 text-xs">Participante · Polla Gorettiana</p>
         </div>
         <div className="ml-auto text-right shrink-0">
-          <p className="font-display text-4xl text-yellow-400">{participant.total_points}</p>
-          <p className="text-slate-400 text-[10px] uppercase tracking-wider">puntos</p>
+          <p className="font-display text-4xl text-yellow-400 leading-none">{participant.total_points}</p>
+          <p className="text-slate-400 text-[10px] uppercase tracking-wider mb-2">puntos</p>
+          <p className="text-emerald-400 font-semibold text-sm leading-none">{exactScores} 🎯</p>
+          <p className="text-slate-600 text-[10px] uppercase tracking-wider">exactos</p>
         </div>
       </div>
 
