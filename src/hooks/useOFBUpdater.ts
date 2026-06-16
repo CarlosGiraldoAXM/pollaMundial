@@ -1,6 +1,6 @@
 import { useRef, useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { fetchOFBResults } from '../lib/openfootball'
+import { fetchOFBResults, fetchOFBMatches } from '../lib/openfootball'
 import { recalcMatchPredictions } from '../lib/scoring'
 import { supabase } from '../lib/supabase'
 import type { Match } from '../lib/supabase'
@@ -63,11 +63,14 @@ export function useOFBUpdater() {
         await recalcMatchPredictions(supabase, id, home, away)
       }
 
+      // Refrescar cache de grupos (localStorage) con datos frescos del mismo fetch
+      await fetchOFBMatches(true)
+
       queryClient.invalidateQueries({ queryKey: ['matches'] })
       queryClient.invalidateQueries({ queryKey: ['matches-admin'] })
       queryClient.invalidateQueries({ queryKey: ['participants'] })
       queryClient.invalidateQueries({ queryKey: ['player'] })
-      queryClient.invalidateQueries({ queryKey: ['api-matches'] })
+      queryClient.invalidateQueries({ queryKey: ['ofb-matches'] })
 
       const total = ofbResults.length
       setSummary(

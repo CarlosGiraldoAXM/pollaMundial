@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { fetchAllMatches, getApiCacheSnapshot } from '../lib/matchApi'
+import { fetchOFBMatches, getOFBCacheSnapshot } from '../lib/openfootball'
 import { computeGroupStandings } from '../lib/groupStandings'
 import { computeTopScorers } from '../lib/scorers'
 import type { GroupStanding, TeamStanding } from '../lib/groupStandings'
@@ -167,14 +167,13 @@ export function GroupStandings() {
   const [selectedGroup, setSelectedGroup] = useState<string | null>(null)
 
   const { data: apiMatches = [], isLoading, isFetching } = useQuery({
-    queryKey: ['api-matches'],
-    queryFn: () => fetchAllMatches(),
+    queryKey: ['ofb-matches'],
+    queryFn: () => fetchOFBMatches(),
     staleTime: 2 * 60 * 60 * 1000,
     refetchInterval: 2 * 60 * 60 * 1000,
     gcTime: 3 * 60 * 60 * 1000,
-    // Muestra datos del localStorage inmediatamente mientras refesca en background
-    initialData: () => getApiCacheSnapshot()?.data,
-    initialDataUpdatedAt: () => getApiCacheSnapshot()?.ts ?? 0,
+    initialData: () => getOFBCacheSnapshot()?.data,
+    initialDataUpdatedAt: () => getOFBCacheSnapshot()?.ts ?? 0,
     placeholderData: prev => prev,
   })
 

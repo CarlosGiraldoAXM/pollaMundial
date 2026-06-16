@@ -1,7 +1,32 @@
+import type { ApiMatch } from './matchApi'
+
 const OFB_URL =
   'https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json'
 
 const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+
+// Cache de localStorage para la pestaña de Grupos
+const OFB_LS_KEY = 'polla_ofb_matches_v1'
+const OFB_LS_TTL = 2 * 60 * 60 * 1000
+
+interface OFBLsCache { data: ApiMatch[]; ts: number }
+
+function ofbLsRead(): OFBLsCache | null {
+  try {
+    const raw = localStorage.getItem(OFB_LS_KEY)
+    return raw ? JSON.parse(raw) as OFBLsCache : null
+  } catch { return null }
+}
+
+function ofbLsWrite(data: ApiMatch[]) {
+  try {
+    localStorage.setItem(OFB_LS_KEY, JSON.stringify({ data, ts: Date.now() }))
+  } catch {}
+}
+
+export function getOFBCacheSnapshot(): { data: ApiMatch[]; ts: number } | null {
+  return ofbLsRead()
+}
 
 interface OFBGoal {
   name: string
@@ -69,14 +94,56 @@ function toColombiaTime(date: string, time: string): string | null {
   return `${day} ${MONTHS[parseInt(monthStr) - 1]} · ${String(colHour).padStart(2, '0')}:${String(colMin).padStart(2, '0')}`
 }
 
+// Cache en memoria del JSON crudo — evita doble fetch si fetchOFBSchedule y fetchOFBMatches
+// se invocan juntos al arrancar la app
+let rawMemCache: { data: OFBMatch[]; ts: number } | null = null
+
 async function fetchOFBData(): Promise<OFBMatch[]> {
+  if (rawMemCache && Date.now() - rawMemCache.ts < 60_000) return rawMemCache.data
   const res = await fetch(OFB_URL)
   if (!res.ok) throw new Error(`openfootball HTTP ${res.status}`)
   const data: OFBData = await res.json()
   const all: OFBMatch[] = []
   if (data.matches) all.push(...data.matches)
   else if (data.rounds) data.rounds.forEach(r => all.push(...(r.matches ?? [])))
+  rawMemCache = { data: all, ts: Date.now() }
   return all
+}
+
+function goalsToStr(goals: OFBGoal[] | undefined): string | null {
+  if (!goals?.length) return null
+  // Convierte [{name, minute}] al formato PostgreSQL que espera scorers.ts: {"Name 45'"}
+  return '{' + goals.map(g => `"${g.name} ${g.minute}'"`).join(',') + '}'
+}
+
+// Retorna todos los partidos del JSON como ApiMatch[], con cache en localStorage (2h)
+export async function fetchOFBMatches(forceRefresh = false): Promise<ApiMatch[]> {
+  if (!forceRefresh) {
+    const cached = ofbLsRead()
+    if (cached && Date.now() - cached.ts < OFB_LS_TTL) return cached.data
+  }
+  if (forceRefresh) rawMemCache = null   // forzar re-fetch del JSON crudo también
+
+  const all = await fetchOFBData()
+
+  const matches: ApiMatch[] = all
+    .filter(m => m.team1 && m.team2)
+    .map((m): ApiMatch => ({
+      id: `ofb::${m.date}::${norm(m.team1)}::${norm(m.team2)}`,
+      home_team: m.team1,
+      away_team: m.team2,
+      home_score: m.score?.ft[0] ?? null,
+      away_score: m.score?.ft[1] ?? null,
+      status: m.score?.ft ? 'finished' : 'scheduled',
+      date: m.date ?? null,
+      group: m.group ? m.group.replace(/^Group\s+/i, '') : null,
+      type: m.group ? 'group' : null,
+      home_scorers: goalsToStr(m.goals1),
+      away_scorers: goalsToStr(m.goals2),
+    }))
+
+  if (matches.length > 0) ofbLsWrite(matches)
+  return matches
 }
 
 // Retorna Map<"TEAM1::TEAM2" (sorted, normalizado) → "11 jun · 14:00">
