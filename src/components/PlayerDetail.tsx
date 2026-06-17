@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import type { Participant, Match, Prediction } from '../lib/supabase'
 import { getFlagUrl } from '../constants/flagEmoji'
+import { calcPoints } from '../lib/scoring'
 
 interface PredictionRow {
   prediction: Prediction
@@ -78,7 +79,15 @@ export function PlayerDetail({ name }: Props) {
   }
 
   const { participant, rows } = data
-  const exactScores = rows.filter(r => r.prediction.points_earned === 3).length
+  const exactScores = rows.filter(({ prediction: pred, match }) =>
+    match.status === 'finished' &&
+    match.home_score !== null &&
+    match.away_score !== null &&
+    calcPoints(
+      { predicted_home: pred.predicted_home, predicted_away: pred.predicted_away },
+      { home_score: match.home_score!, away_score: match.away_score! }
+    ) === 3
+  ).length
   const grouped = groupByPhase(rows)
 
   return (
@@ -110,9 +119,15 @@ export function PlayerDetail({ name }: Props) {
           </div>
           <div className="divide-y divide-white/5">
             {phaseRows.map(({ prediction, match }) => {
-              const pts = prediction.points_earned
               const finished = match.status === 'finished'
               const hasResult = match.home_score !== null && match.away_score !== null
+              // Calcular siempre client-side para no depender del valor almacenado en DB
+              const pts = (finished && hasResult)
+                ? calcPoints(
+                    { predicted_home: prediction.predicted_home, predicted_away: prediction.predicted_away },
+                    { home_score: match.home_score!, away_score: match.away_score! }
+                  )
+                : (prediction.points_earned ?? 0)
 
               return (
                 <div key={prediction.id} className="px-4 py-3">

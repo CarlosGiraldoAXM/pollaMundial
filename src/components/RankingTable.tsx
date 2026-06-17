@@ -15,23 +15,30 @@ async function fetchRankingData(): Promise<{ rows: ParticipantRow[]; hasLive: bo
   const [
     { data: participants },
     { data: liveMatches },
+    { data: finishedMatches },
     { data: allPreds },
   ] = await Promise.all([
     supabase.from('participants').select('*'),
     supabase.from('matches').select('id, home_score, away_score').eq('status', 'live'),
-    supabase.from('predictions').select('participant_id, match_id, predicted_home, predicted_away, points_earned'),
+    supabase.from('matches').select('id, home_score, away_score').eq('status', 'finished'),
+    supabase.from('predictions').select('participant_id, match_id, predicted_home, predicted_away'),
   ])
 
   const live = liveMatches ?? []
   const preds = allPreds ?? []
   const liveIds = new Set(live.map(m => m.id))
+  const finishedMap = new Map((finishedMatches ?? []).map(m => [m.id, m]))
 
-  // Marcadores exactos confirmados por participante (points_earned === 3)
+  // Marcadores exactos calculados desde el resultado real (no desde points_earned)
   const exactMap: Record<string, number> = {}
   for (const p of preds) {
-    if (p.points_earned === 3) {
-      exactMap[p.participant_id] = (exactMap[p.participant_id] ?? 0) + 1
-    }
+    const match = finishedMap.get(p.match_id)
+    if (!match || match.home_score === null || match.away_score === null) continue
+    const pts = calcPoints(
+      { predicted_home: p.predicted_home, predicted_away: p.predicted_away },
+      { home_score: match.home_score, away_score: match.away_score }
+    )
+    if (pts === 3) exactMap[p.participant_id] = (exactMap[p.participant_id] ?? 0) + 1
   }
 
   // Puntos tentativos por participante (sumando todos los partidos en vivo)

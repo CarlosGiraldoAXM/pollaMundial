@@ -85,13 +85,20 @@ export async function recalcAllPoints(supabase: AnySupabaseClient): Promise<void
     totalByParticipant.set(pred.participant_id, (totalByParticipant.get(pred.participant_id) ?? 0) + pts)
   }
 
-  // 4. Batch upsert de predicciones (grupos de 100)
+  // 4. Actualizar points_earned en predictions (solo las de partidos terminados)
+  // Usamos update individual en lugar de upsert para evitar fallos silenciosos
+  // con constraints de esquema en Supabase
   const updates = preds
-    .filter(p => matchMap.has(p.match_id))   // solo las de partidos terminados
+    .filter(p => matchMap.has(p.match_id))
     .map(p => ({ id: p.id, points_earned: pointsById.get(p.id) ?? 0 }))
 
-  for (let i = 0; i < updates.length; i += 100) {
-    await supabase.from('predictions').upsert(updates.slice(i, i + 100), { onConflict: 'id' })
+  const CHUNK = 20
+  for (let i = 0; i < updates.length; i += CHUNK) {
+    await Promise.all(
+      updates.slice(i, i + CHUNK).map(u =>
+        supabase.from('predictions').update({ points_earned: u.points_earned }).eq('id', u.id)
+      )
+    )
   }
 
   // 5. Actualizar total_points de cada participante
@@ -123,10 +130,9 @@ export async function recalcMatchPredictions(
     ),
   }))
 
-  // Batch upsert points
-  for (const upd of updates) {
-    await supabase.from('predictions').update({ points_earned: upd.points_earned }).eq('id', upd.id)
-  }
+  await Promise.all(
+    updates.map(u => supabase.from('predictions').update({ points_earned: u.points_earned }).eq('id', u.id))
+  )
 
   // Recalc totals for all affected participants
   const participantIds = [...new Set(preds.map(p => p.participant_id))]
