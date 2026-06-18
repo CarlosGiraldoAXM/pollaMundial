@@ -80,12 +80,22 @@ export function useMatchUpdater() {
           (dbMatch.home_score !== scoreHome || dbMatch.away_score !== scoreAway)
         const dateChanged = api.date && dbMatch.match_date !== api.date
 
-        if (!statusChanged && !scoreChanged && !dateChanged) continue
+        // Si el partido no ha comenzado pero la BD tiene scores (ceros pre-partido
+        // que se colaron de una sync anterior), limpiarlos ahora
+        const hasFalseScore =
+          api.status === 'scheduled' &&
+          dbMatch.status !== 'finished' &&
+          (dbMatch.home_score !== null || dbMatch.away_score !== null)
+
+        if (!statusChanged && !scoreChanged && !dateChanged && !hasFalseScore) continue
 
         const payload: Record<string, unknown> = { status: api.status, api_match_id: api.id }
         if (hasRealScore) {
           payload.home_score = scoreHome
           payload.away_score = scoreAway
+        } else if (hasFalseScore) {
+          payload.home_score = null
+          payload.away_score = null
         }
         if (api.date) payload.match_date = apiDateToISO(api.date)
         await supabase.from('matches').update(payload).eq('id', dbMatch.id)

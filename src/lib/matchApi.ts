@@ -153,6 +153,8 @@ function deriveStatus(m: RawMatch): 'scheduled' | 'live' | 'finished' {
   const elapsed = String(m.time_elapsed ?? '').toLowerCase().trim()
   if (elapsed === 'finished') return 'finished'
   if (String(m.finished ?? '').toUpperCase() === 'TRUE') return 'finished'
-  if (elapsed === 'live') return 'live'
-  return 'scheduled'
+  // Cualquier time_elapsed no vacío y no "notstarted" = partido en curso
+  // (incluye: "45", "HT", "90+2", "live", etc.)
+  if (!elapsed || elapsed === 'notstarted') return 'scheduled'
+  return 'live'
 }

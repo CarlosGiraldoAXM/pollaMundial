@@ -145,7 +145,8 @@ export function PlayerDetail({ name }: Props) {
           <div key={phase} className="card overflow-hidden">
             <button
               onClick={() => toggle(phase)}
-              className="w-full px-4 py-3 border-b border-white/5 bg-white/3 flex items-center justify-between hover:bg-white/5 transition-colors"
+              style={{ WebkitTapHighlightColor: 'transparent', touchAction: 'manipulation' }}
+              className="w-full px-4 py-3 border-b border-white/5 bg-white/3 flex items-center justify-between hover:bg-white/5 active:bg-white/10 transition-colors cursor-pointer select-none"
             >
               <h3 className="text-xs font-semibold text-yellow-400 uppercase tracking-widest">
                 {formatPhase(phase)}
