@@ -1,10 +1,11 @@
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import type { Participant } from '../lib/supabase'
 import { useRealtime } from '../hooks/useRealtime'
 import { calcPoints } from '../lib/scoring'
-import { getApiCacheSnapshot } from '../lib/matchApi'
+import { fetchAllMatches } from '../lib/matchApi'
 import type { ApiMatch } from '../lib/matchApi'
 import { normalizeTeamName } from '../constants/teamMapping'
 
@@ -37,17 +38,18 @@ function buildScoreMaps(
   // 1. BD es autoridad para partidos marcados como terminados/en vivo
   for (const m of dbMatches) {
     if (m.home_score === null || m.away_score === null) continue
-    if (m.status === 'finished') finished.set(m.id, { hs: m.home_score, as: m.away_score })
-    else if (m.status === 'live') live.set(m.id, { hs: m.home_score, as: m.away_score })
+    if (m.status === 'finished') finished.set(m.id, { hs: Number(m.home_score), as: Number(m.away_score) })
+    else if (m.status === 'live') live.set(m.id, { hs: Number(m.home_score), as: Number(m.away_score) })
   }
 
-  // 2. Para partidos aún en 'scheduled' en BD, intentar obtener scores del cache del API
-  //    (por si el admin no ha sincronizado aún)
+  // 2. Para partidos no-terminados en BD (scheduled O live), intentar overlay del API.
+  //    Importante: partidos que quedaron como 'live' en BD (último sync fue durante el partido)
+  //    pueden haber terminado ya según el API — hay que promoverlos a 'finished'.
   const apiFinished = apiCache.filter(m => m.status === 'finished' && m.home_score !== null && m.away_score !== null)
   const apiLive     = apiCache.filter(m => m.status === 'live'     && m.home_score !== null && m.away_score !== null)
 
   for (const dbm of dbMatches) {
-    if (finished.has(dbm.id) || live.has(dbm.id)) continue   // ya cubierto por la BD
+    if (finished.has(dbm.id)) continue   // BD definitivamente terminado — autoridad final
 
     const dH = normTeam(dbm.home_team)
     const dA = normTeam(dbm.away_team)
@@ -57,87 +59,70 @@ function buildScoreMaps(
         const aH = normTeam(api.home_team)
         const aA = normTeam(api.away_team)
         if (dH === aH && dA === aA) {
-          target.set(dbm.id, { hs: api.home_score!, as: api.away_score! })
+          target.set(dbm.id, { hs: Number(api.home_score), as: Number(api.away_score) })
           return
         }
         // Equipos invertidos entre Excel y API — también hay que invertir los goles
         if (dH === aA && dA === aH) {
-          target.set(dbm.id, { hs: api.away_score!, as: api.home_score! })
+          target.set(dbm.id, { hs: Number(api.away_score), as: Number(api.home_score) })
           return
         }
       }
     }
 
+    // Si el API dice que ya terminó, promoverlo (aunque la BD lo tenga como 'live')
     tryOverlay(apiFinished, finished)
-    if (!finished.has(dbm.id)) tryOverlay(apiLive, live)
+    if (finished.has(dbm.id)) {
+      live.delete(dbm.id)   // ya no es tentativo
+      continue
+    }
+
+    // No terminó según el API — usar/actualizar scores en vivo del API
+    tryOverlay(apiLive, live)
   }
 
   return { finished, live }
 }
 
-async function fetchRankingData(): Promise<{ rows: ParticipantRow[]; hasLive: boolean }> {
+interface RankingDbData {
+  participants: Participant[]
+  matches: { id: string; home_team: string; away_team: string; home_score: number | null; away_score: number | null; status: string }[]
+  preds: { participant_id: string; match_id: string; predicted_home: number; predicted_away: number }[]
+}
+
+// Solo datos de BD — sin leer el cache del API aquí
+async function fetchRankingDbData(): Promise<RankingDbData> {
   const [
     { data: participants },
     { data: allMatches },
-    { data: allPreds },
   ] = await Promise.all([
     supabase.from('participants').select('*'),
     supabase.from('matches').select('id, home_team, away_team, home_score, away_score, status'),
-    supabase.from('predictions').select('participant_id, match_id, predicted_home, predicted_away'),
   ])
 
-  const preds   = allPreds   ?? []
-  const matches = allMatches ?? []
-
-  // Cache del API (sin llamada de red — lo que ya está en localStorage)
-  const apiCache = getApiCacheSnapshot()?.data ?? []
-
-  const { finished: finishedScores, live: liveScores } = buildScoreMaps(matches, apiCache)
-
-  // Calcular puntos enteramente del lado del cliente
-  const totalMap:     Record<string, number> = {}
-  const exactMap:     Record<string, number> = {}
-  const tentativeMap: Record<string, number> = {}
-
-  for (const pred of preds) {
-    const f = finishedScores.get(pred.match_id)
-    if (f) {
-      const pts = calcPoints(
-        { predicted_home: Number(pred.predicted_home), predicted_away: Number(pred.predicted_away) },
-        { home_score: f.hs, away_score: f.as }
-      )
-      totalMap[pred.participant_id] = (totalMap[pred.participant_id] ?? 0) + pts
-      if (pts === 3) exactMap[pred.participant_id] = (exactMap[pred.participant_id] ?? 0) + 1
-    }
-
-    const l = liveScores.get(pred.match_id)
-    if (l) {
-      const pts = calcPoints(
-        { predicted_home: Number(pred.predicted_home), predicted_away: Number(pred.predicted_away) },
-        { home_score: l.hs, away_score: l.as }
-      )
-      tentativeMap[pred.participant_id] = (tentativeMap[pred.participant_id] ?? 0) + pts
-    }
+  // Supabase tiene un límite de 1000 filas por request.
+  // Con 23 participantes × 48+ partidos = 1100+ predicciones, hay que paginar.
+  const PAGE = 1000
+  const allPreds: RankingDbData['preds'] = []
+  let offset = 0
+  while (true) {
+    const { data, error } = await supabase
+      .from('predictions')
+      .select('participant_id, match_id, predicted_home, predicted_away')
+      .order('participant_id', { ascending: true })
+      .order('match_id', { ascending: true })
+      .range(offset, offset + PAGE - 1)
+    if (error || !data || data.length === 0) break
+    allPreds.push(...data)
+    if (data.length < PAGE) break
+    offset += PAGE
   }
 
-  const rows: ParticipantRow[] = (participants ?? []).map(p => {
-    const total     = totalMap[p.id]     ?? 0
-    const tentative = tentativeMap[p.id] ?? 0
-    return {
-      ...p,
-      total_points: total,
-      tentativePoints: tentative,
-      totalWithTentative: total + tentative,
-      exactScores: exactMap[p.id] ?? 0,
-    }
-  })
-
-  rows.sort((a, b) =>
-    b.totalWithTentative - a.totalWithTentative ||
-    b.exactScores - a.exactScores
-  )
-
-  return { rows, hasLive: liveScores.size > 0 }
+  return {
+    participants: participants ?? [],
+    matches: allMatches ?? [],
+    preds: allPreds,
+  }
 }
 
 const MEDALS    = ['🥇', '🥈', '🥉']
@@ -154,14 +139,74 @@ export function RankingTable() {
   useRealtime()
   const navigate = useNavigate()
 
-  const { data, isLoading, error } = useQuery({
+  // Datos de BD — se invalida vía useRealtime o cada 30s
+  const { data: dbData, isLoading, error } = useQuery({
     queryKey: ['participants'],
-    queryFn: fetchRankingData,
+    queryFn: fetchRankingDbData,
     refetchInterval: 30_000,
   })
 
-  const rows    = data?.rows    ?? []
-  const hasLive = data?.hasLive ?? false
+  // Misma query que MatchList — comparten cache de React Query
+  // Cuando MatchList refresca la API, RankingTable recalcula automáticamente
+  const { data: apiMatches = [] } = useQuery({
+    queryKey: ['api-matches-live'],
+    queryFn: () => fetchAllMatches(false),
+    staleTime: 90_000,
+    refetchInterval: 2 * 60_000,
+    retry: 0,
+  })
+
+  // Calcular puntos del lado del cliente usando useMemo para que reaccione
+  // inmediatamente cuando apiMatches se actualiza (sin esperar el refetch de BD)
+  const { rows, hasLive } = useMemo(() => {
+    if (!dbData) return { rows: [], hasLive: false }
+
+    const { finished: finishedScores, live: liveScores } = buildScoreMaps(dbData.matches, apiMatches)
+
+    const totalMap:     Record<string, number> = {}
+    const exactMap:     Record<string, number> = {}
+    const tentativeMap: Record<string, number> = {}
+
+    for (const pred of dbData.preds) {
+      const f = finishedScores.get(pred.match_id)
+      if (f) {
+        const pts = calcPoints(
+          { predicted_home: Number(pred.predicted_home), predicted_away: Number(pred.predicted_away) },
+          { home_score: f.hs, away_score: f.as }
+        )
+        totalMap[pred.participant_id] = (totalMap[pred.participant_id] ?? 0) + pts
+        if (pts === 3) exactMap[pred.participant_id] = (exactMap[pred.participant_id] ?? 0) + 1
+      }
+
+      const l = liveScores.get(pred.match_id)
+      if (l) {
+        const pts = calcPoints(
+          { predicted_home: Number(pred.predicted_home), predicted_away: Number(pred.predicted_away) },
+          { home_score: l.hs, away_score: l.as }
+        )
+        tentativeMap[pred.participant_id] = (tentativeMap[pred.participant_id] ?? 0) + pts
+      }
+    }
+
+    const participantRows: ParticipantRow[] = dbData.participants.map(p => {
+      const total     = totalMap[p.id]     ?? 0
+      const tentative = tentativeMap[p.id] ?? 0
+      return {
+        ...p,
+        total_points: total,
+        tentativePoints: tentative,
+        totalWithTentative: total + tentative,
+        exactScores: exactMap[p.id] ?? 0,
+      }
+    })
+
+    participantRows.sort((a, b) =>
+      b.totalWithTentative - a.totalWithTentative ||
+      b.exactScores - a.exactScores
+    )
+
+    return { rows: participantRows, hasLive: liveScores.size > 0 }
+  }, [dbData, apiMatches])
 
   if (isLoading) return <RankingSkeleton />
   if (error) return (

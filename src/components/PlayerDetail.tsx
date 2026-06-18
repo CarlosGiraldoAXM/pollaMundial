@@ -1,13 +1,24 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import type { Participant, Match, Prediction } from '../lib/supabase'
 import { getFlagUrl } from '../constants/flagEmoji'
 import { calcPoints } from '../lib/scoring'
+import { getApiCacheSnapshot } from '../lib/matchApi'
+import type { ApiMatch } from '../lib/matchApi'
+import { normalizeTeamName } from '../constants/teamMapping'
 
 interface PredictionRow {
   prediction: Prediction
   match: Match
+}
+
+function normTeam(s: string): string {
+  return normalizeTeamName(s)
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
 }
 
 async function fetchPlayerData(name: string): Promise<{ participant: Participant; rows: PredictionRow[] } | null> {
@@ -78,6 +89,38 @@ export function PlayerDetail({ name }: Props) {
     queryFn: () => fetchPlayerData(name),
   })
 
+  // Overlay del cache del API para partidos no sincronizados a la BD aún
+  // Misma lógica que buildScoreMaps en RankingTable para garantizar coherencia
+  const rows = useMemo((): PredictionRow[] => {
+    if (!data) return []
+    const apiCache = getApiCacheSnapshot()?.data ?? []
+    const apiFinished = apiCache.filter(m => m.status === 'finished' && m.home_score !== null && m.away_score !== null)
+    const apiLive     = apiCache.filter(m => m.status === 'live'     && m.home_score !== null && m.away_score !== null)
+
+    return data.rows.map(({ prediction, match }) => {
+      if (match.status === 'finished') return { prediction, match }
+      const dH = normTeam(match.home_team)
+      const dA = normTeam(match.away_team)
+
+      const tryOverlay = (source: ApiMatch[]): Match | null => {
+        for (const api of source) {
+          const aH = normTeam(api.home_team)
+          const aA = normTeam(api.away_team)
+          if (dH === aH && dA === aA) {
+            return { ...match, status: api.status as Match['status'], home_score: api.home_score, away_score: api.away_score }
+          }
+          if (dH === aA && dA === aH) {
+            return { ...match, status: api.status as Match['status'], home_score: api.away_score, away_score: api.home_score }
+          }
+        }
+        return null
+      }
+
+      const overlaid = tryOverlay(apiFinished) ?? tryOverlay(apiLive)
+      return { prediction, match: overlaid ?? match }
+    })
+  }, [data])
+
   const toggle = (phase: string) =>
     setCollapsed(prev => {
       const next = new Set(prev)
@@ -95,18 +138,26 @@ export function PlayerDetail({ name }: Props) {
     )
   }
 
-  const { participant, rows } = data
+  const { participant } = data
   const grouped = groupByPhase(rows)
 
-  const exactScores = rows.filter(({ prediction: pred, match }) =>
-    match.status === 'finished' &&
-    match.home_score !== null &&
-    match.away_score !== null &&
-    calcPoints(
+  // Calcular puntos del lado del cliente igual que RankingTable
+  let totalPoints = 0
+  let tentativePoints = 0
+  let exactScores = 0
+  for (const { prediction: pred, match } of rows) {
+    if (match.home_score === null || match.away_score === null) continue
+    const pts = calcPoints(
       { predicted_home: Number(pred.predicted_home), predicted_away: Number(pred.predicted_away) },
       { home_score: Number(match.home_score), away_score: Number(match.away_score) }
-    ) === 3
-  ).length
+    )
+    if (match.status === 'finished') {
+      totalPoints += pts
+      if (pts === 3) exactScores++
+    } else if (match.status === 'live') {
+      tentativePoints += pts
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -120,7 +171,14 @@ export function PlayerDetail({ name }: Props) {
           <p className="text-slate-400 text-xs">Participante · Polla Gorettiana</p>
         </div>
         <div className="ml-auto text-right shrink-0">
-          <p className="font-display text-4xl text-yellow-400 leading-none">{participant.total_points}</p>
+          <div className="flex items-baseline justify-end gap-1.5">
+            <p className="font-display text-4xl text-yellow-400 leading-none">{totalPoints}</p>
+            {tentativePoints > 0 && (
+              <span className="text-xs font-bold text-red-400 bg-red-400/10 border border-red-400/25 rounded px-1 py-0.5 leading-none animate-pulse">
+                +{tentativePoints}
+              </span>
+            )}
+          </div>
           <p className="text-slate-400 text-[10px] uppercase tracking-wider mb-2">puntos</p>
           <p className="text-emerald-400 font-semibold text-sm leading-none">{exactScores} 🎯</p>
           <p className="text-slate-600 text-[10px] uppercase tracking-wider">exactos</p>
@@ -131,14 +189,16 @@ export function PlayerDetail({ name }: Props) {
       {grouped.map(({ phase, rows: phaseRows }) => {
         const isCollapsed = collapsed.has(phase)
 
-        const phasePoints = phaseRows.reduce((sum, { prediction: pred, match }) => {
-          if (match.status !== 'finished' || match.home_score === null || match.away_score === null) return sum
-          return sum + calcPoints(
-            { predicted_home: Number(pred.predicted_home), predicted_away: Number(pred.predicted_away) },
-            { home_score: Number(match.home_score), away_score: Number(match.away_score) }
-          )
-        }, 0)
-        const finishedCount = phaseRows.filter(r => r.match.status === 'finished').length
+        let phasePoints = 0
+        for (const { prediction: pred, match } of phaseRows) {
+          if ((match.status === 'finished' || match.status === 'live') && match.home_score !== null && match.away_score !== null) {
+            phasePoints += calcPoints(
+              { predicted_home: Number(pred.predicted_home), predicted_away: Number(pred.predicted_away) },
+              { home_score: Number(match.home_score), away_score: Number(match.away_score) }
+            )
+          }
+        }
+        const finishedCount = phaseRows.filter(r => r.match.status === 'finished' || r.match.status === 'live').length
         const total = phaseRows.length
 
         return (
@@ -172,8 +232,9 @@ export function PlayerDetail({ name }: Props) {
               <div className="divide-y divide-white/5">
                 {phaseRows.map(({ prediction, match }) => {
                   const finished = match.status === 'finished'
+                  const isLive = match.status === 'live'
                   const hasResult = match.home_score !== null && match.away_score !== null
-                  const pts = (finished && hasResult)
+                  const pts = (finished || isLive) && hasResult
                     ? calcPoints(
                         { predicted_home: Number(prediction.predicted_home), predicted_away: Number(prediction.predicted_away) },
                         { home_score: Number(match.home_score), away_score: Number(match.away_score) }
@@ -200,20 +261,25 @@ export function PlayerDetail({ name }: Props) {
 
                         {hasResult ? (
                           <div className="flex items-center gap-1">
-                            <span className="text-[10px] text-slate-500 uppercase tracking-wide">Res</span>
-                            <span className="font-display text-lg text-yellow-400 leading-none">
+                            <span className="text-[10px] text-slate-500 uppercase tracking-wide">
+                              {isLive ? '⚡' : 'Res'}
+                            </span>
+                            <span className={`font-display text-lg leading-none ${isLive ? 'text-red-400' : 'text-yellow-400'}`}>
                               {match.home_score}–{match.away_score}
                             </span>
                           </div>
                         ) : (
-                          <span className="text-[10px] text-slate-600">
-                            {match.status === 'live' ? '⚡ En vivo' : '–'}
-                          </span>
+                          <span className="text-[10px] text-slate-600">–</span>
                         )}
 
                         {finished && (
                           <span className={`ml-auto text-xs px-2.5 py-1 rounded-full border font-semibold shrink-0 ${POINTS_COLOR[pts] ?? POINTS_COLOR[0]}`}>
                             {POINTS_LABEL[pts] ?? '–'} · {pts}pts
+                          </span>
+                        )}
+                        {isLive && hasResult && (
+                          <span className="ml-auto text-xs px-2.5 py-1 rounded-full border font-semibold shrink-0 text-red-400 bg-red-400/10 border-red-400/25 animate-pulse">
+                            ⚡ {pts}pts
                           </span>
                         )}
                       </div>
