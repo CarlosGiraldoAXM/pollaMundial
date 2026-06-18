@@ -5,6 +5,8 @@ const CODES: Record<string, string> = {
   'SUDAFRICA': 'za', 'SUDÁFRICA': 'za',
   'COREA': 'kr',
   'CANADA': 'ca', 'CANADÁ': 'ca', 'CÁNADA': 'ca',
+  'REP. CHECA': 'cz', 'REPUBLICA CHECA': 'cz', 'REPÚBLICA CHECA': 'cz',
+  'BOSNIA AND HERZEGOVINA': 'ba', 'BOSNIA & HERZEGOVINA': 'ba',
   'BOSNIA': 'ba',
   'USA': 'us', 'ESTADOS UNIDOS': 'us',
   'PARAGUAY': 'py',

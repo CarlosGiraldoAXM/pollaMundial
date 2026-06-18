@@ -153,7 +153,16 @@ export async function fetchOFBSchedule(): Promise<Map<string, string>> {
   for (const m of all) {
     if (!m.date || !m.time || !m.team1 || !m.team2) continue
     const colTime = toColombiaTime(m.date, m.time)
-    if (colTime) schedule.set(pairKey(m.team1, m.team2), colTime)
+    if (!colTime) continue
+    // Normalizar nombres (ej: "Bosnia & Herzegovina" → norm → "BOSNIA & HERZEGOVINA")
+    // y también con & → and para que el lookup desde MatchList (que usa "and") coincida
+    schedule.set(pairKey(m.team1, m.team2), colTime)
+    // Alias con "and" en vez de "&" para cubrir variantes del nombre en la BD
+    const t1alt = m.team1.replace(/&/g, 'and')
+    const t2alt = m.team2.replace(/&/g, 'and')
+    if (t1alt !== m.team1 || t2alt !== m.team2) {
+      schedule.set(pairKey(t1alt, t2alt), colTime)
+    }
   }
   return schedule
 }

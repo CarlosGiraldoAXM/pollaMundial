@@ -5,6 +5,8 @@ import type { Match } from '../lib/supabase'
 import { MatchCard } from './MatchCard'
 import { calcPoints } from '../lib/scoring'
 import { fetchOFBSchedule } from '../lib/openfootball'
+import { fetchAllMatches } from '../lib/matchApi'
+import type { ApiMatch } from '../lib/matchApi'
 import { normalizeTeamName } from '../constants/teamMapping'
 
 interface MatchWithStats extends Match {
@@ -39,6 +41,46 @@ async function fetchMatchesWithStats(): Promise<MatchWithStats[]> {
   })
 }
 
+// Clave normalizada para lookup — ordena los equipos alfabéticamente para que
+// no importe el orden local/visitante (se maneja por separado)
+function normPairKey(a: string, b: string): string {
+  const na = normalizeTeamName(a).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+  const nb = normalizeTeamName(b).toLowerCase().replace('&', 'and').normalize('NFD').replace(/[̀-ͯ]/g, '')
+  return [na, nb].sort().join('::')
+}
+
+// Para la pestaña de horarios desde openfootball
+function norm(name: string): string {
+  return name.trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+}
+function pairKey(a: string, b: string): string {
+  return [norm(a), norm(b)].sort().join('::')
+}
+
+// Superpone datos en vivo del API sobre el partido de la BD.
+// Respeta la orientación local/visitante: si los equipos están invertidos
+// entre el API y la BD, también se invierten los goles.
+function withLiveData(dbMatch: MatchWithStats, apiMap: Map<string, ApiMatch>): MatchWithStats {
+  if (dbMatch.status === 'finished') return dbMatch   // la BD es autoridad para partidos terminados
+
+  const key = normPairKey(dbMatch.home_team, dbMatch.away_team)
+  const api = apiMap.get(key)
+  if (!api || api.status === 'scheduled') return dbMatch  // sin datos útiles del API
+
+  const dbHomeNorm = normalizeTeamName(dbMatch.home_team).toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+  const apiHomeNorm = normalizeTeamName(api.home_team).toLowerCase()
+    .replace('&', 'and').normalize('NFD').replace(/[̀-ͯ]/g, '')
+  const reversed = dbHomeNorm !== apiHomeNorm
+
+  return {
+    ...dbMatch,
+    status: api.status,
+    home_score: reversed ? api.away_score : api.home_score,
+    away_score: reversed ? api.home_score : api.away_score,
+  }
+}
+
 const PHASES = [
   { key: 'all', label: 'Todos' },
   { key: 'PRIMERA_FECHA', label: 'Fecha 1' },
@@ -51,24 +93,27 @@ const PHASES = [
   { key: 'FINAL', label: 'Final' },
 ]
 
-// Clave de lookup: misma normalización que openfootball.ts
-function norm(name: string): string {
-  return name.trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
-}
-function pairKey(a: string, b: string): string {
-  return [norm(a), norm(b)].sort().join('::')
-}
-
 export function MatchList() {
   const [phase, setPhase] = useState('all')
 
+  // Datos base desde Supabase
   const { data: matches = [], isLoading } = useQuery({
     queryKey: ['matches'],
     queryFn: fetchMatchesWithStats,
     refetchInterval: 60_000,
   })
 
-  // Horarios de Colombia desde openfootball (datos estáticos, sin refetch)
+  // Datos en vivo desde worldcup26.ir (usa cache de localStorage, refresca cada 2 min)
+  // No bloquea el render — si falla, simplemente no hay overlay de datos en vivo
+  const { data: apiMatches = [] } = useQuery({
+    queryKey: ['api-matches-live'],
+    queryFn: () => fetchAllMatches(false),
+    staleTime: 90_000,
+    refetchInterval: 2 * 60_000,
+    retry: 0,
+  })
+
+  // Horarios de Colombia desde openfootball
   const { data: ofbSchedule = new Map() } = useQuery({
     queryKey: ['ofb-schedule'],
     queryFn: fetchOFBSchedule,
@@ -76,16 +121,26 @@ export function MatchList() {
     retry: 1,
   })
 
+  // Mapa de API por par de equipos (ordenado, insensible al orden local/visitante)
+  const apiMap = new Map<string, ApiMatch>()
+  for (const m of apiMatches) {
+    apiMap.set(normPairKey(m.home_team, m.away_team), m)
+  }
+
   const STATUS_ORDER = { live: 0, scheduled: 1, finished: 2 }
 
-  const filtered = (phase === 'all' ? matches : matches.filter(m => m.phase === phase))
+  // Aplicar datos en vivo y ordenar
+  const enriched = matches.map(m => withLiveData(m, apiMap))
+
+  const filtered = (phase === 'all' ? enriched : enriched.filter(m => m.phase === phase))
     .sort((a, b) => {
       const sa = STATUS_ORDER[a.status] ?? 1
       const sb = STATUS_ORDER[b.status] ?? 1
-      if (sa !== sb) return sa - sb          // live primero, finished último
-      return (a.match_order ?? 0) - (b.match_order ?? 0) // dentro del mismo estado, orden Excel
+      if (sa !== sb) return sa - sb
+      return (a.match_order ?? 0) - (b.match_order ?? 0)
     })
-  const liveCount = matches.filter(m => m.status === 'live').length
+
+  const liveCount = enriched.filter(m => m.status === 'live').length
 
   return (
     <div className="card overflow-hidden">
@@ -120,7 +175,7 @@ export function MatchList() {
         </div>
       </div>
 
-      {/* Match cards - single column for readable team names */}
+      {/* Match cards */}
       {isLoading ? (
         <div className="p-4 space-y-3">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -130,7 +185,6 @@ export function MatchList() {
       ) : (
         <div className="p-4 space-y-3 max-h-[600px] overflow-y-auto scrollbar-thin">
           {filtered.map(m => {
-            // Traduce nombre español del Excel → inglés para buscar en openfootball
             const homeEN = normalizeTeamName(m.home_team)
             const awayEN = normalizeTeamName(m.away_team)
             const colombiaTime = ofbSchedule.get(pairKey(homeEN, awayEN)) ?? null
