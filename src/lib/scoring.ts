@@ -77,8 +77,8 @@ export async function recalcAllPoints(supabase: AnySupabaseClient): Promise<void
     const match = matchMap.get(pred.match_id)
     const pts = match && match.home_score !== null && match.away_score !== null
       ? calcPoints(
-          { predicted_home: pred.predicted_home, predicted_away: pred.predicted_away },
-          { home_score: match.home_score, away_score: match.away_score }
+          { predicted_home: Number(pred.predicted_home), predicted_away: Number(pred.predicted_away) },
+          { home_score: Number(match.home_score), away_score: Number(match.away_score) }
         )
       : 0
     pointsById.set(pred.id, pts)
@@ -125,7 +125,7 @@ export async function recalcMatchPredictions(
   const updates = preds.map(p => ({
     id: p.id,
     points_earned: calcPoints(
-      { predicted_home: p.predicted_home, predicted_away: p.predicted_away },
+      { predicted_home: Number(p.predicted_home), predicted_away: Number(p.predicted_away) },
       result
     ),
   }))

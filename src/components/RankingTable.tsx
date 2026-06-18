@@ -35,8 +35,8 @@ async function fetchRankingData(): Promise<{ rows: ParticipantRow[]; hasLive: bo
     const match = finishedMap.get(p.match_id)
     if (!match || match.home_score === null || match.away_score === null) continue
     const pts = calcPoints(
-      { predicted_home: p.predicted_home, predicted_away: p.predicted_away },
-      { home_score: match.home_score, away_score: match.away_score }
+      { predicted_home: Number(p.predicted_home), predicted_away: Number(p.predicted_away) },
+      { home_score: Number(match.home_score), away_score: Number(match.away_score) }
     )
     if (pts === 3) exactMap[p.participant_id] = (exactMap[p.participant_id] ?? 0) + 1
   }

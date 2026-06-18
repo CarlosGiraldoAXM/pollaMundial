@@ -17,16 +17,24 @@ async function fetchPlayerData(name: string): Promise<{ participant: Participant
     .single()
   if (!p) return null
 
+  // Fetch separado (sin join) — igual que recalcAllPoints, que sí da el total correcto.
+  // El join matches(*) puede devolver datos inconsistentes con lo que hay en la tabla.
   const { data: preds } = await supabase
     .from('predictions')
-    .select('*, matches(*)')
+    .select('*')
     .eq('participant_id', p.id)
 
+  const matchIds = [...new Set((preds ?? []).map(pr => pr.match_id))]
+  const { data: matches } = await supabase
+    .from('matches')
+    .select('*')
+    .in('id', matchIds)
+
+  const matchMap = new Map((matches ?? []).map(m => [m.id, m as Match]))
+
   const rows: PredictionRow[] = (preds ?? [])
-    .map((pred: Prediction & { matches: Match }) => ({
-      prediction: pred,
-      match: pred.matches,
-    }))
+    .map((pred: Prediction) => ({ prediction: pred, match: matchMap.get(pred.match_id)! }))
+    .filter(r => r.match)
     .sort((a, b) => (a.match.match_order ?? 0) - (b.match.match_order ?? 0))
 
   return { participant: p, rows }
@@ -121,13 +129,12 @@ export function PlayerDetail({ name }: Props) {
             {phaseRows.map(({ prediction, match }) => {
               const finished = match.status === 'finished'
               const hasResult = match.home_score !== null && match.away_score !== null
-              // Calcular siempre client-side para no depender del valor almacenado en DB
               const pts = (finished && hasResult)
                 ? calcPoints(
-                    { predicted_home: prediction.predicted_home, predicted_away: prediction.predicted_away },
-                    { home_score: match.home_score!, away_score: match.away_score! }
+                    { predicted_home: Number(prediction.predicted_home), predicted_away: Number(prediction.predicted_away) },
+                    { home_score: Number(match.home_score), away_score: Number(match.away_score) }
                   )
-                : (prediction.points_earned ?? 0)
+                : 0
 
               return (
                 <div key={prediction.id} className="px-4 py-3">
