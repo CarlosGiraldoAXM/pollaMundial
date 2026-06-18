@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
 import type { Participant, Match, Prediction } from '../lib/supabase'
@@ -17,8 +18,6 @@ async function fetchPlayerData(name: string): Promise<{ participant: Participant
     .single()
   if (!p) return null
 
-  // Fetch separado (sin join) — igual que recalcAllPoints, que sí da el total correcto.
-  // El join matches(*) puede devolver datos inconsistentes con lo que hay en la tabla.
   const { data: preds } = await supabase
     .from('predictions')
     .select('*')
@@ -71,10 +70,20 @@ interface Props {
 }
 
 export function PlayerDetail({ name }: Props) {
+  // Hooks siempre al tope, antes de cualquier early return
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+
   const { data, isLoading, error } = useQuery({
     queryKey: ['player', name],
     queryFn: () => fetchPlayerData(name),
   })
+
+  const toggle = (phase: string) =>
+    setCollapsed(prev => {
+      const next = new Set(prev)
+      next.has(phase) ? next.delete(phase) : next.add(phase)
+      return next
+    })
 
   if (isLoading) return <PlayerSkeleton />
   if (error || !data) {
@@ -87,19 +96,20 @@ export function PlayerDetail({ name }: Props) {
   }
 
   const { participant, rows } = data
+  const grouped = groupByPhase(rows)
+
   const exactScores = rows.filter(({ prediction: pred, match }) =>
     match.status === 'finished' &&
     match.home_score !== null &&
     match.away_score !== null &&
     calcPoints(
-      { predicted_home: pred.predicted_home, predicted_away: pred.predicted_away },
-      { home_score: match.home_score!, away_score: match.away_score! }
+      { predicted_home: Number(pred.predicted_home), predicted_away: Number(pred.predicted_away) },
+      { home_score: Number(match.home_score), away_score: Number(match.away_score) }
     ) === 3
   ).length
-  const grouped = groupByPhase(rows)
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Player header */}
       <div className="card p-5 flex items-center gap-4">
         <div className="w-14 h-14 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center text-navy font-display text-2xl shrink-0">
@@ -118,69 +128,100 @@ export function PlayerDetail({ name }: Props) {
       </div>
 
       {/* Predictions by phase */}
-      {grouped.map(({ phase, rows: phaseRows }) => (
-        <div key={phase} className="card overflow-hidden">
-          <div className="px-4 py-3 border-b border-white/5 bg-white/3">
-            <h3 className="text-xs font-semibold text-yellow-400 uppercase tracking-widest">
-              {formatPhase(phase)}
-            </h3>
-          </div>
-          <div className="divide-y divide-white/5">
-            {phaseRows.map(({ prediction, match }) => {
-              const finished = match.status === 'finished'
-              const hasResult = match.home_score !== null && match.away_score !== null
-              const pts = (finished && hasResult)
-                ? calcPoints(
-                    { predicted_home: Number(prediction.predicted_home), predicted_away: Number(prediction.predicted_away) },
-                    { home_score: Number(match.home_score), away_score: Number(match.away_score) }
-                  )
-                : 0
+      {grouped.map(({ phase, rows: phaseRows }) => {
+        const isCollapsed = collapsed.has(phase)
 
-              return (
-                <div key={prediction.id} className="px-4 py-3">
-                  {/* Línea 1: equipos con banderas */}
-                  <div className="flex items-center gap-1.5 mb-2 min-w-0">
-                    <FlagImg team={match.home_team} />
-                    <span className="text-white font-semibold text-sm">{match.home_team}</span>
-                    <span className="text-slate-600 text-xs mx-0.5 shrink-0">vs</span>
-                    <span className="text-white font-semibold text-sm">{match.away_team}</span>
-                    <FlagImg team={match.away_team} />
-                  </div>
+        const phasePoints = phaseRows.reduce((sum, { prediction: pred, match }) => {
+          if (match.status !== 'finished' || match.home_score === null || match.away_score === null) return sum
+          return sum + calcPoints(
+            { predicted_home: Number(pred.predicted_home), predicted_away: Number(pred.predicted_away) },
+            { home_score: Number(match.home_score), away_score: Number(match.away_score) }
+          )
+        }, 0)
+        const finishedCount = phaseRows.filter(r => r.match.status === 'finished').length
+        const total = phaseRows.length
 
-                  {/* Línea 2: predicción, resultado y puntos */}
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <div className="flex items-center gap-1">
-                      <span className="text-[10px] text-slate-500 uppercase tracking-wide">Pred</span>
-                      <span className="font-display text-lg text-slate-200 leading-none">
-                        {prediction.predicted_home}–{prediction.predicted_away}
-                      </span>
-                    </div>
+        return (
+          <div key={phase} className="card overflow-hidden">
+            <button
+              onClick={() => toggle(phase)}
+              className="w-full px-4 py-3 border-b border-white/5 bg-white/3 flex items-center justify-between hover:bg-white/5 transition-colors"
+            >
+              <h3 className="text-xs font-semibold text-yellow-400 uppercase tracking-widest">
+                {formatPhase(phase)}
+              </h3>
+              <div className="flex items-center gap-3">
+                {isCollapsed && (
+                  <span className="text-[11px] text-slate-400">
+                    {finishedCount}/{total} jugados
+                    {finishedCount > 0 && (
+                      <span className="text-yellow-400 font-semibold ml-1.5">· {phasePoints}pts</span>
+                    )}
+                  </span>
+                )}
+                <span className={`text-slate-500 text-xs transition-transform duration-200 ${isCollapsed ? '' : 'rotate-180'}`}>
+                  ▲
+                </span>
+              </div>
+            </button>
 
-                    {hasResult ? (
-                      <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-slate-500 uppercase tracking-wide">Res</span>
-                        <span className="font-display text-lg text-yellow-400 leading-none">
-                          {match.home_score}–{match.away_score}
-                        </span>
+            {!isCollapsed && (
+              <div className="divide-y divide-white/5">
+                {phaseRows.map(({ prediction, match }) => {
+                  const finished = match.status === 'finished'
+                  const hasResult = match.home_score !== null && match.away_score !== null
+                  const pts = (finished && hasResult)
+                    ? calcPoints(
+                        { predicted_home: Number(prediction.predicted_home), predicted_away: Number(prediction.predicted_away) },
+                        { home_score: Number(match.home_score), away_score: Number(match.away_score) }
+                      )
+                    : 0
+
+                  return (
+                    <div key={prediction.id} className="px-4 py-3">
+                      <div className="flex items-center gap-1.5 mb-2 min-w-0">
+                        <FlagImg team={match.home_team} />
+                        <span className="text-white font-semibold text-sm">{match.home_team}</span>
+                        <span className="text-slate-600 text-xs mx-0.5 shrink-0">vs</span>
+                        <span className="text-white font-semibold text-sm">{match.away_team}</span>
+                        <FlagImg team={match.away_team} />
                       </div>
-                    ) : (
-                      <span className="text-[10px] text-slate-600">
-                        {match.status === 'live' ? '⚡ En vivo' : '–'}
-                      </span>
-                    )}
 
-                    {finished && (
-                      <span className={`ml-auto text-xs px-2.5 py-1 rounded-full border font-semibold shrink-0 ${POINTS_COLOR[pts] ?? POINTS_COLOR[0]}`}>
-                        {POINTS_LABEL[pts] ?? '–'} · {pts}pts
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )
-            })}
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-slate-500 uppercase tracking-wide">Pred</span>
+                          <span className="font-display text-lg text-slate-200 leading-none">
+                            {prediction.predicted_home}–{prediction.predicted_away}
+                          </span>
+                        </div>
+
+                        {hasResult ? (
+                          <div className="flex items-center gap-1">
+                            <span className="text-[10px] text-slate-500 uppercase tracking-wide">Res</span>
+                            <span className="font-display text-lg text-yellow-400 leading-none">
+                              {match.home_score}–{match.away_score}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-slate-600">
+                            {match.status === 'live' ? '⚡ En vivo' : '–'}
+                          </span>
+                        )}
+
+                        {finished && (
+                          <span className={`ml-auto text-xs px-2.5 py-1 rounded-full border font-semibold shrink-0 ${POINTS_COLOR[pts] ?? POINTS_COLOR[0]}`}>
+                            {POINTS_LABEL[pts] ?? '–'} · {pts}pts
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -213,14 +254,16 @@ function formatPhase(phase: string): string {
 
 function PlayerSkeleton() {
   return (
-    <div className="space-y-6 animate-pulse">
+    <div className="space-y-4 animate-pulse">
       <div className="card p-5 h-24 bg-white/5" />
-      <div className="card overflow-hidden">
-        <div className="px-4 py-3 border-b border-white/5 h-10 bg-white/5" />
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="px-4 py-3 h-16 border-b border-white/5 bg-white/3" />
-        ))}
-      </div>
+      {Array.from({ length: 3 }).map((_, i) => (
+        <div key={i} className="card overflow-hidden">
+          <div className="px-4 py-3 border-b border-white/5 h-10 bg-white/5" />
+          {Array.from({ length: 4 }).map((_, j) => (
+            <div key={j} className="px-4 py-3 h-16 border-b border-white/5 bg-white/3" />
+          ))}
+        </div>
+      ))}
     </div>
   )
 }

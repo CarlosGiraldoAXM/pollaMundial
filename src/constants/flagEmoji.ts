@@ -4,7 +4,7 @@ const CODES: Record<string, string> = {
   'MEXICO': 'mx', 'MÉXICO': 'mx',
   'SUDAFRICA': 'za', 'SUDÁFRICA': 'za',
   'COREA': 'kr',
-  'CANADA': 'ca', 'CANADÁ': 'ca',
+  'CANADA': 'ca', 'CANADÁ': 'ca', 'CÁNADA': 'ca',
   'BOSNIA': 'ba',
   'USA': 'us', 'ESTADOS UNIDOS': 'us',
   'PARAGUAY': 'py',
