@@ -84,7 +84,6 @@ export function useMatchUpdater() {
         // que se colaron de una sync anterior), limpiarlos ahora
         const hasFalseScore =
           api.status === 'scheduled' &&
-          dbMatch.status !== 'finished' &&
           (dbMatch.home_score !== null || dbMatch.away_score !== null)
 
         if (!statusChanged && !scoreChanged && !dateChanged && !hasFalseScore) continue

@@ -38,6 +38,7 @@ interface OFBMatch {
   time?: string   // "13:00 UTC-6"  ← plain strings, offset incluido
   team1: string   // "Mexico"        ← string directo, NO objeto
   team2: string   // "South Africa"
+  group?: string  // "Group A", "Group B", etc. (solo fase de grupos)
   score?: { ft: [number, number]; ht?: [number, number] }
   goals1?: OFBGoal[]
   goals2?: OFBGoal[]
