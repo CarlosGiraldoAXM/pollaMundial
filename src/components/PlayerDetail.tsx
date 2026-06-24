@@ -295,15 +295,27 @@ export function PlayerDetail({ name }: Props) {
   )
 }
 
+const PHASE_ORDER: Record<string, number> = {
+  PRIMERA_FECHA: 1,
+  SEGUNDA_FECHA: 2,
+  TERCERA_FECHA: 3,
+  DIECISEISAVOS: 4,
+  OCTAVOS: 5,
+  CUARTOS: 6,
+  SEMIFINALES: 7,
+  FINAL: 8,
+}
+
 function groupByPhase(rows: PredictionRow[]): Array<{ phase: string; rows: PredictionRow[] }> {
-  const order: string[] = []
   const map: Record<string, PredictionRow[]> = {}
   for (const row of rows) {
     const phase = row.match.phase
-    if (!map[phase]) { map[phase] = []; order.push(phase) }
+    if (!map[phase]) map[phase] = []
     map[phase].push(row)
   }
-  return order.map(phase => ({ phase, rows: map[phase] }))
+  return Object.keys(map)
+    .sort((a, b) => (PHASE_ORDER[a] ?? 99) - (PHASE_ORDER[b] ?? 99))
+    .map(phase => ({ phase, rows: map[phase] }))
 }
 
 const PHASE_LABELS: Record<string, string> = {
